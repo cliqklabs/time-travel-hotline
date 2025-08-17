@@ -1,0 +1,21 @@
+# Raspberry Pi requirements for Time Travel Hotline
+# Install with: pip install -r requirements_pi.txt
+
+# Core AI services
+openai>=1.0.0
+deepgram-sdk>=2.0.0
+elevenlabs>=0.2.0
+
+# Audio processing (optimized for Pi)
+sounddevice>=0.4.6
+webrtcvad>=2.0.10
+pydub>=0.25.1
+simpleaudio>=1.0.4
+numpy>=1.21.0
+
+# Raspberry Pi specific
+RPi.GPIO>=0.7.0
+pyalsaaudio>=0.9.0
+
+# Optional: for better audio performance
+# pyaudio>=0.2.11  # Uncomment if sounddevice has issues

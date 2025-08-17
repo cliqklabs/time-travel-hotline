@@ -1,0 +1,17 @@
+# Time Travel Hotline - PC Development Requirements
+# Install with: pip install -r requirements.txt
+
+# Core AI services
+openai>=1.0.0
+deepgram-sdk>=2.0.0
+elevenlabs>=0.2.0
+
+# Audio processing
+sounddevice>=0.4.6
+webrtcvad>=2.0.10
+pydub>=0.25.1
+simpleaudio>=1.0.4
+numpy>=1.21.0
+
+# Optional: for better audio performance on Windows
+# pyaudio>=0.2.11
