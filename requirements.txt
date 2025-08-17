@@ -3,7 +3,7 @@
 
 # Core AI services
 openai>=1.0.0
-deepgram-sdk>=2.0.0
+deepgram-sdk<3.0.0,>=2.0.0  # Compatible with Python 3.9
 elevenlabs>=0.2.0
 
 # Environment management

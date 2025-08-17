@@ -5,7 +5,7 @@ import webrtcvad
 import argparse
 from io import BytesIO
 import wave
-from deepgram import DeepgramClient, PrerecordedOptions
+from deepgram import Deepgram
 from elevenlabs import ElevenLabs
 from openai import OpenAI
 from pydub import AudioSegment
@@ -87,9 +87,20 @@ SYSTEM_PROMPTS = {
 }
 
 # ---------- CLIENTS ----------
-dg = DeepgramClient(api_key=os.getenv("DEEPGRAM_API_KEY"))
-oai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-eleven = ElevenLabs(api_key=os.getenv("ELEVEN_API_KEY"))
+# Initialize clients only when needed
+dg = None
+oai = None
+eleven = None
+
+def init_clients():
+    """Initialize API clients when needed"""
+    global dg, oai, eleven
+    if dg is None:
+        dg = Deepgram(os.getenv("DEEPGRAM_API_KEY"))
+    if oai is None:
+        oai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    if eleven is None:
+        eleven = ElevenLabs(api_key=os.getenv("ELEVEN_API_KEY"))
 
 # Playback state (so we can stop it on barge-in)
 current_playback = None
@@ -324,15 +335,20 @@ def pcm16_to_wav_bytes(pcm_bytes, sample_rate=16000, channels=1):
         wf.writeframes(pcm_bytes)
     return bio.getvalue()
 
-# ---------- ASR (Deepgram v4 REST) ----------
+# ---------- ASR (Deepgram v2 REST) ----------
 def asr_deepgram_pcm16(audio_bytes):
     try:
+        init_clients()  # Initialize clients if needed
         wav_bytes = pcm16_to_wav_bytes(audio_bytes, SAMPLE_RATE, CHANNELS)
         source = {"buffer": wav_bytes, "mimetype": "audio/wav"}
-        opts = PrerecordedOptions(model="nova-2", smart_format=True, punctuate=True, language="en-US")
-        resp = dg.listen.rest.v("1").transcribe_file(source, opts)
-        alt = resp.results.channels[0].alternatives[0]
-        return alt.transcript.strip() if alt.transcript else ""
+        resp = dg.transcription.prerecorded(source, {
+            "model": "nova-2",
+            "smart_format": True,
+            "punctuate": True,
+            "language": "en-US"
+        })
+        alt = resp["results"]["channels"][0]["alternatives"][0]
+        return alt["transcript"].strip() if alt["transcript"] else ""
     except Exception as e:
         print(f"❌ Speech recognition failed: {e}")
         return ""
@@ -340,6 +356,7 @@ def asr_deepgram_pcm16(audio_bytes):
 # ---------- LLM ----------
 def llm_character_reply(character_name, user_text):
     try:
+        init_clients()  # Initialize clients if needed
         system = SYSTEM_PROMPTS[character_name]
         resp = oai.chat.completions.create(
             model="gpt-4o-mini",
@@ -358,6 +375,7 @@ def speak_tts_with_barge_in(voice_id_or_name: str, text: str):
     global current_playback
 
     try:
+        init_clients()  # Initialize clients if needed
         # Generate audio
         stream = eleven.text_to_speech.convert(
             voice_id_or_name,
