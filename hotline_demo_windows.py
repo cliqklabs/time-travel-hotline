@@ -32,11 +32,43 @@ except ImportError:
     AUDIO_SYSTEM = "default"
 
 MIN_RMS = 500  # adjust threshold up/down to tune sensitivity
+BARGEIN_MIN_RMS = 2000  # Very high threshold for barge-in to reduce false triggers
 
 def is_loud_enough(chunk):
     samples = np.frombuffer(chunk, dtype=np.int16)
     rms = np.sqrt(np.mean(samples.astype(np.float32)**2))
     return rms > MIN_RMS
+
+def is_loud_enough_for_bargein(chunk):
+    """More stringent audio check for barge-in detection"""
+    samples = np.frombuffer(chunk, dtype=np.int16)
+    rms = np.sqrt(np.mean(samples.astype(np.float32)**2))
+    return rms > BARGEIN_MIN_RMS
+
+def is_likely_echo(chunk):
+    """Simple check to see if audio chunk might be echo from speakers"""
+    global current_tts_audio
+    if current_tts_audio is None:
+        return False
+    
+    # Convert chunk to numpy array for analysis
+    samples = np.frombuffer(chunk, dtype=np.int16)
+    
+    # Simple heuristic: if the audio has very consistent amplitude (like TTS),
+    # it might be echo. Real speech has more variation.
+    if len(samples) > 0:
+        # Calculate coefficient of variation (std/mean)
+        mean_amp = np.mean(np.abs(samples))
+        std_amp = np.std(samples)
+        if mean_amp > 0:
+            cv = std_amp / mean_amp
+            # TTS tends to have lower variation than human speech
+            return cv < 0.3  # Threshold for "too consistent" audio
+            
+        # Additional check: if volume is too low, it's probably not real speech
+        if mean_amp < 1000:  # Very low volume threshold
+            return True
+    return False
 
 # ---------- RASPBERRY PI CONFIG ----------
 # GPIO pins for rotary dial and hook switch
@@ -65,8 +97,10 @@ else:
 
 # Barge-in controls
 ENABLE_BARGEIN = True  # will be overridden by --mode at startup
-BARGEIN_DEBOUNCE_FRAMES = 3   # require N consecutive "speech" frames before cutting TTS
+BARGEIN_DEBOUNCE_FRAMES = 8   # require N consecutive "speech" frames before cutting TTS (increased from 3)
+BARGEIN_VAD_SENSITIVITY = 0   # Least sensitive VAD for barge-in (0-3, lower = less sensitive)
 TTS_PREROLL_MS = 120          # prevents first-phoneme cutoff
+BARGEIN_DELAY_MS = 1000       # longer delay before enabling barge-in to avoid echo from TTS
 
 # ---------- CONFIG ----------
 # voice_pref accepts a voice NAME or a voice ID; using IDs for precision here.
@@ -105,6 +139,8 @@ def init_clients():
 # Playback state (so we can stop it on barge-in)
 current_playback = None
 playback_lock = threading.Lock()
+current_tts_audio = None  # Store current TTS audio for echo detection
+bargein_audio_buffer = None  # Store audio that triggered barge-in
 
 # ---------- RASPBERRY PI HARDWARE CONTROL ----------
 def init_gpio():
@@ -336,19 +372,30 @@ def pcm16_to_wav_bytes(pcm_bytes, sample_rate=16000, channels=1):
     return bio.getvalue()
 
 # ---------- ASR (Deepgram v2 REST) ----------
+import asyncio
+
 def asr_deepgram_pcm16(audio_bytes):
     try:
         init_clients()  # Initialize clients if needed
         wav_bytes = pcm16_to_wav_bytes(audio_bytes, SAMPLE_RATE, CHANNELS)
         source = {"buffer": wav_bytes, "mimetype": "audio/wav"}
-        resp = dg.transcription.prerecorded(source, {
-            "model": "nova-2",
-            "smart_format": True,
-            "punctuate": True,
-            "language": "en-US"
-        })
-        alt = resp["results"]["channels"][0]["alternatives"][0]
-        return alt["transcript"].strip() if alt["transcript"] else ""
+        
+        # Create a new event loop for this async call
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            resp = loop.run_until_complete(dg.transcription.prerecorded(source, {
+                "model": "nova-2",
+                "smart_format": True,
+                "punctuate": True,
+                "language": "en-US"
+            }))
+            alt = resp["results"]["channels"][0]["alternatives"][0]
+            return alt["transcript"].strip() if alt["transcript"] else ""
+        finally:
+            loop.close()
+            
     except Exception as e:
         print(f"❌ Speech recognition failed: {e}")
         return ""
@@ -384,6 +431,10 @@ def speak_tts_with_barge_in(voice_id_or_name: str, text: str):
         )
         audio_bytes = b"".join(stream)
         seg = AudioSegment.from_file(BytesIO(audio_bytes), format="mp3")
+        
+        # Store TTS audio for echo detection
+        global current_tts_audio
+        current_tts_audio = seg
     except Exception as e:
         print(f"❌ Text-to-speech failed: {e}")
         return
@@ -417,15 +468,23 @@ def speak_tts_with_barge_in(voice_id_or_name: str, text: str):
             time.sleep(0.05)
         return
 
+    # Wait for initial TTS playback to avoid echo detection
+    time.sleep(BARGEIN_DELAY_MS / 1000.0)
+
     # While playback is active, watch mic for speech; stop playback when detected
-    vad = webrtcvad.Vad(VAD_SENSITIVITY)
+    vad = webrtcvad.Vad(BARGEIN_VAD_SENSITIVITY)  # Use less sensitive VAD for barge-in
     q = queue.Queue()
+    
+    # Audio buffer to capture speech that triggers barge-in
+    audio_buffer = []
+    buffer_size = int(2.0 * SAMPLE_RATE / (SAMPLE_RATE * FRAME_MS / 1000))  # 2 seconds of audio
 
     def mic_cb(indata, frames, time_info, status):
         # Push raw 16-bit bytes
         q.put(bytes(indata))
 
     debounce = 0
+    start_time = time.time()
     try:
         with sd.RawInputStream(samplerate=SAMPLE_RATE,
                                blocksize=int(SAMPLE_RATE * FRAME_MS / 1000),
@@ -442,10 +501,29 @@ def speak_tts_with_barge_in(voice_id_or_name: str, text: str):
                 except queue.Empty:
                     continue
 
-                if len(chunk) == int(SAMPLE_RATE * FRAME_MS / 1000) * 2 and vad.is_speech(chunk, SAMPLE_RATE):
+                # Add chunk to audio buffer (maintain rolling 2-second buffer)
+                audio_buffer.append(chunk)
+                if len(audio_buffer) > buffer_size:
+                    audio_buffer.pop(0)
+
+                # Only enable barge-in after a delay to avoid echo from TTS startup
+                elapsed = time.time() - start_time
+                if elapsed < 3.0:  # Disable barge-in for first 3 seconds
+                    continue
+
+                # More stringent barge-in detection: require VAD, volume, and not echo
+                if (len(chunk) == int(SAMPLE_RATE * FRAME_MS / 1000) * 2 and 
+                    vad.is_speech(chunk, SAMPLE_RATE) and 
+                    is_loud_enough_for_bargein(chunk) and
+                    not is_likely_echo(chunk)):
                     debounce += 1
                     if debounce >= BARGEIN_DEBOUNCE_FRAMES:
                         print("⛔ Barge-in detected: stopping playback")
+                        
+                        # Store the audio buffer for processing
+                        global bargein_audio_buffer
+                        bargein_audio_buffer = b"".join(audio_buffer)
+                        
                         with playback_lock:
                             if current_playback and current_playback.is_playing():
                                 current_playback.stop()
@@ -551,16 +629,26 @@ def main_loop(text_mode=False):
                     print()  # Add spacing for readability
                     
                 else:
-                    print("🎤 Listening...")
-                    pcm = record_until_silence()
-                    if len(pcm) < 16000:
-                        continue
+                    # Check if we have barge-in audio to process first
+                    global bargein_audio_buffer
+                    if bargein_audio_buffer is not None:
+                        print("📝 Processing barge-in audio...")
+                        user_text = asr_deepgram_pcm16(bargein_audio_buffer)
+                        bargein_audio_buffer = None  # Clear the buffer
+                        print(f"YOU: {user_text}")
+                        if not user_text:
+                            continue
+                    else:
+                        print("🎤 Listening...")
+                        pcm = record_until_silence()
+                        if len(pcm) < 16000:
+                            continue
 
-                    print("📝 Transcribing...")
-                    user_text = asr_deepgram_pcm16(pcm)
-                    print(f"YOU: {user_text}")
-                    if not user_text:
-                        continue
+                        print("📝 Transcribing...")
+                        user_text = asr_deepgram_pcm16(pcm)
+                        print(f"YOU: {user_text}")
+                        if not user_text:
+                            continue
 
                     if user_text.lower() in {"goodbye","hang up","bye","end call"}:
                         speak_tts_with_barge_in(voice_pref, "Goodbye.")
