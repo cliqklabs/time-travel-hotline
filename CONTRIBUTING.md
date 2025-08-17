@@ -35,7 +35,7 @@ Thank you for your interest in contributing to the Time Travel Hotline project! 
 ### **Local Development**
 ```bash
 # Clone your fork
-git clone https://github.com/yourusername/time-travel-hotline.git
+git clone https://github.com/cliqklabs/time-travel-hotline.git
 cd time-travel-hotline
 
 # Create virtual environment
@@ -187,9 +187,9 @@ def test_character_selection():
 ## 📞 Getting Help
 
 ### **Resources**
-- [GitHub Issues](https://github.com/yourusername/time-travel-hotline/issues)
-- [GitHub Discussions](https://github.com/yourusername/time-travel-hotline/discussions)
-- [Project Wiki](https://github.com/yourusername/time-travel-hotline/wiki)
+- [GitHub Issues](https://github.com/cliqklabs/time-travel-hotline/issues)
+- [GitHub Discussions](https://github.com/cliqklabs/time-travel-hotline/discussions)
+- [Project Wiki](https://github.com/cliqklabs/time-travel-hotline/wiki)
 
 ### **Community Guidelines**
 - Be respectful and inclusive

@@ -31,7 +31,7 @@ Vintage Phone Hardware ←→ Raspberry Pi ←→ Cloud AI Services
 ### **PC Development Mode**
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/time-travel-hotline.git
+git clone https://github.com/cliqklabs/time-travel-hotline.git
 cd time-travel-hotline
 
 # Install dependencies
@@ -153,9 +153,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/time-travel-hotline/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/time-travel-hotline/discussions)
-- **Wiki**: [Project Wiki](https://github.com/yourusername/time-travel-hotline/wiki)
+- **Issues**: [GitHub Issues](https://github.com/cliqklabs/time-travel-hotline/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/cliqklabs/time-travel-hotline/discussions)
+- **Wiki**: [Project Wiki](https://github.com/cliqklabs/time-travel-hotline/wiki)
 
 ---
 
