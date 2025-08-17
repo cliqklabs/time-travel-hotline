@@ -46,9 +46,8 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 # Set up API keys
-export OPENAI_API_KEY="your-key"
-export DEEPGRAM_API_KEY="your-key"
-export ELEVEN_API_KEY="your-key"
+cp env_template.txt .env
+# Edit .env file with your actual API keys
 
 # Run tests
 python -m pytest

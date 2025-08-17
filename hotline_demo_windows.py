@@ -12,6 +12,10 @@ from pydub import AudioSegment
 from simpleaudio import play_buffer
 import numpy as np
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # Raspberry Pi specific imports
 try:
     import RPi.GPIO as GPIO
@@ -597,7 +601,10 @@ if __name__ == "__main__":
     missing = [k for k in ("ELEVEN_API_KEY","DEEPGRAM_API_KEY","OPENAI_API_KEY") if not os.getenv(k)]
     if missing:
         print(f"❌ Missing required environment variables: {', '.join(missing)}")
-        print("Please set these before running the application.")
+        print("Please create a .env file with your API keys:")
+        print("1. Copy env_template.txt to .env")
+        print("2. Replace placeholder values with your actual API keys")
+        print("3. Restart the application")
         exit(1)
 
     # List audio devices if requested

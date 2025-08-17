@@ -37,10 +37,9 @@ cd time-travel-hotline
 # Install dependencies
 pip install -r requirements.txt
 
-# Set API keys
-export OPENAI_API_KEY="your-key"
-export DEEPGRAM_API_KEY="your-key"
-export ELEVEN_API_KEY="your-key"
+# Set up API keys
+cp env_template.txt .env
+# Edit .env file with your actual API keys
 
 # Run in text mode (no microphone needed)
 python hotline_demo_windows.py --text-mode

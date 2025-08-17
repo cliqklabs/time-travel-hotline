@@ -77,9 +77,19 @@ pip install -r requirements_pi.txt
 
 ### 1. Set API Keys
 ```bash
-export OPENAI_API_KEY="your-openai-key"
-export DEEPGRAM_API_KEY="your-deepgram-key"  
-export ELEVEN_API_KEY="your-elevenlabs-key"
+# Copy the environment template
+cp env_template.txt .env
+
+# Edit the .env file with your actual API keys
+nano .env
+```
+
+Example .env file:
+```bash
+OPENAI_API_KEY=sk-your-openai-key-here
+DEEPGRAM_API_KEY=your-deepgram-key-here
+ELEVEN_API_KEY=your-elevenlabs-key-here
+HOTLINE_MODE=barge
 ```
 
 ### 2. Audio Configuration

@@ -1,0 +1,14 @@
+# Time Travel Hotline - Environment Variables Template
+# Copy this file to .env and replace with your actual API keys
+
+# OpenAI API Key (for GPT-4 conversations)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Deepgram API Key (for speech recognition)
+DEEPGRAM_API_KEY=your_deepgram_api_key_here
+
+# ElevenLabs API Key (for text-to-speech)
+ELEVEN_API_KEY=your_elevenlabs_api_key_here
+
+# Optional: Conversation mode (barge or turn)
+HOTLINE_MODE=barge
