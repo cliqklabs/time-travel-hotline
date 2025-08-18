@@ -21,5 +21,8 @@ gTTS>=2.3.2
 # Offline TTS (pyttsx3)
 pyttsx3>=2.90
 
+# Chatterbox TTS (Resemble AI)
+chatterbox-tts>=0.1.0
+
 # Raspberry Pi specific (optional)
 # RPi.GPIO>=0.7.1  # Uncomment if using on Raspberry Pi

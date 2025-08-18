@@ -4,11 +4,12 @@ This version of the AI Character Hotline supports multiple Text-to-Speech provid
 
 ## 🎯 Features
 
-- **Multiple TTS Providers**: ElevenLabs, Azure Speech, Google TTS (gTTS), and pyttsx3 (offline)
+- **Multiple TTS Providers**: ElevenLabs, Azure Speech, Google TTS (gTTS), pyttsx3 (offline), and Chatterbox (voice cloning)
 - **Easy Switching**: Change TTS providers via command line argument
 - **Cross-Platform**: Works on Windows, macOS, Linux, and Raspberry Pi
 - **Barge-in Support**: Interrupt AI speech with your own voice
 - **Character Voices**: Different voices for each AI character
+- **Voice Cloning**: Chatterbox supports zero-shot voice cloning from short audio clips
 
 ## 🚀 Quick Start
 
@@ -52,6 +53,9 @@ python hotline_demo_alternative_tts.py --tts gtts
 # Use offline pyttsx3
 python hotline_demo_alternative_tts.py --tts pyttsx3
 
+# Use Chatterbox voice cloning
+python hotline_demo_alternative_tts.py --tts chatterbox
+
 # Enable barge-in mode
 python hotline_demo_alternative_tts.py --tts azure --mode bargein
 ```
@@ -61,6 +65,7 @@ python hotline_demo_alternative_tts.py --tts azure --mode bargein
 | Provider | Quality | Cost | Offline | Setup Difficulty |
 |----------|---------|------|---------|------------------|
 | **ElevenLabs** | ⭐⭐⭐⭐⭐ | Paid | ❌ | Easy |
+| **Chatterbox** | ⭐⭐⭐⭐⭐ | Free | ✅ | Medium |
 | **Azure Speech** | ⭐⭐⭐⭐ | Paid | ❌ | Medium |
 | **Google TTS** | ⭐⭐⭐ | Free | ❌ | Easy |
 | **pyttsx3** | ⭐⭐ | Free | ✅ | Easy |
@@ -70,6 +75,14 @@ python hotline_demo_alternative_tts.py --tts azure --mode bargein
 - **Character-specific voices** with unique personalities
 - **Paid service** with usage limits
 - **Requires API key**
+
+### Chatterbox
+- **MIT licensed** open-source voice cloning
+- **Zero-shot cloning** from 5-20 seconds of audio
+- **Emotion control** for character personality
+- **Runs locally** (GPU recommended) or on Colab
+- **Outperforms ElevenLabs** in some benchmarks
+- **Requires reference audio files** for each character
 
 ### Azure Speech
 - **High quality** neural voices
@@ -129,6 +142,21 @@ GTTS_LANGUAGES = {
 }
 ```
 
+#### Chatterbox
+```python
+CHATTERBOX_VOICES = {
+    "Albert Einstein": {
+        "reference_audio": "voices/einstein_reference.wav",
+        "emotion_intensity": 0.3,  # Thoughtful, measured
+    },
+    "Elvis Presley": {
+        "reference_audio": "voices/elvis_reference.wav", 
+        "emotion_intensity": 0.7,  # Charming, expressive
+    },
+    # ... more characters
+}
+```
+
 ## 🎭 Available Characters
 
 1. **Albert Einstein** - Wise, thoughtful physicist
@@ -144,6 +172,7 @@ You can easily switch TTS providers without changing code:
 ```bash
 # Try different providers
 python hotline_demo_alternative_tts.py --tts elevenlabs
+python hotline_demo_alternative_tts.py --tts chatterbox
 python hotline_demo_alternative_tts.py --tts azure
 python hotline_demo_alternative_tts.py --tts gtts
 python hotline_demo_alternative_tts.py --tts pyttsx3
@@ -171,6 +200,13 @@ python hotline_demo_alternative_tts.py --tts pyttsx3
 - On Windows, ensure Windows Speech is enabled
 - On macOS, ensure system voices are installed
 
+### Chatterbox Issues
+- Install Chatterbox: `pip install chatterbox-tts`
+- Ensure reference audio files exist in `voices/` directory
+- Check audio quality (5-20 seconds, clear, no background noise)
+- GPU recommended for best performance (6-7 GB VRAM)
+- Run setup script: `python setup_chatterbox.py`
+
 ## 📝 Usage Examples
 
 ### Basic Usage
@@ -189,6 +225,12 @@ python hotline_demo_alternative_tts.py --tts azure --mode bargein
 ```bash
 # Use pyttsx3 for offline operation
 python hotline_demo_alternative_tts.py --tts pyttsx3
+```
+
+### Voice Cloning Mode
+```bash
+# Use Chatterbox for voice cloning
+python hotline_demo_alternative_tts.py --tts chatterbox
 ```
 
 ## 🤝 Contributing

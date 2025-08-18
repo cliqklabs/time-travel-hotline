@@ -44,6 +44,13 @@ except ImportError:
     PYTTSX3_AVAILABLE = False
     print("⚠️  pyttsx3 not available")
 
+try:
+    from chatterbox_tts import Chatterbox
+    CHATTERBOX_AVAILABLE = True
+except ImportError:
+    CHATTERBOX_AVAILABLE = False
+    print("⚠️  Chatterbox TTS not available")
+
 # Raspberry Pi specific imports
 try:
     import RPi.GPIO as GPIO
@@ -132,7 +139,7 @@ BARGEIN_DELAY_MS = 1000       # longer delay before enabling barge-in to avoid e
 
 # ---------- TTS CONFIGURATION ----------
 # Choose your TTS provider here
-TTS_PROVIDER = "elevenlabs"  # Options: "elevenlabs", "azure", "gtts", "pyttsx3"
+TTS_PROVIDER = "elevenlabs"  # Options: "elevenlabs", "azure", "gtts", "pyttsx3", "chatterbox"
 
 # Voice configurations for different providers
 CHARACTERS = {
@@ -161,6 +168,35 @@ GTTS_LANGUAGES = {
     "Elon Musk": "en",
 }
 
+# Chatterbox TTS reference audio files and emotion settings
+CHATTERBOX_VOICES = {
+    "Albert Einstein": {
+        "reference_audio": "voices/einstein_reference.wav",
+        "emotion_intensity": 0.3,  # Thoughtful, measured
+        "description": "Warm, wise, German accent"
+    },
+    "Elvis Presley": {
+        "reference_audio": "voices/elvis_reference.wav", 
+        "emotion_intensity": 0.7,  # Charming, expressive
+        "description": "Southern charm, musical"
+    },
+    "Cleopatra": {
+        "reference_audio": "voices/cleopatra_reference.wav",
+        "emotion_intensity": 0.8,  # Regal, dramatic
+        "description": "Regal, commanding, exotic"
+    },
+    "Beth Dutton": {
+        "reference_audio": "voices/beth_reference.wav",
+        "emotion_intensity": 0.9,  # Sharp, intense
+        "description": "Fierce, cutting, powerful"
+    },
+    "Elon Musk": {
+        "reference_audio": "voices/elon_reference.wav",
+        "emotion_intensity": 0.4,  # Thoughtful, technical
+        "description": "Technical, reflective, visionary"
+    },
+}
+
 SYSTEM_PROMPTS = {
     "Albert Einstein": "You are Albert Einstein in 1946: warm, witty, plain-spoken. Explain ideas with simple analogies. Keep replies in 2–5 sentences. Stay in character.",
     "Elvis Presley":   "You are Elvis Presley, charming and playful. Light Southern cadence. Keep replies 2–4 sentences. Avoid modern slang.",
@@ -176,10 +212,11 @@ oai = None
 eleven = None
 azure_speech_config = None
 pyttsx3_engine = None
+chatterbox_tts = None
 
 def init_clients():
     """Initialize API clients when needed"""
-    global dg, oai, eleven, azure_speech_config, pyttsx3_engine
+    global dg, oai, eleven, azure_speech_config, pyttsx3_engine, chatterbox_tts
     
     if dg is None:
         dg = Deepgram(os.getenv("DEEPGRAM_API_KEY"))
@@ -199,6 +236,9 @@ def init_clients():
     elif TTS_PROVIDER == "pyttsx3" and PYTTSX3_AVAILABLE:
         if pyttsx3_engine is None:
             pyttsx3_engine = pyttsx3.init()
+    elif TTS_PROVIDER == "chatterbox" and CHATTERBOX_AVAILABLE:
+        if chatterbox_tts is None:
+            chatterbox_tts = Chatterbox()
 
 # Playback state (so we can stop it on barge-in)
 current_playback = None
@@ -218,6 +258,8 @@ def generate_tts_audio(character_name: str, text: str) -> AudioSegment:
         return generate_gtts_audio(character_name, text)
     elif TTS_PROVIDER == "pyttsx3" and PYTTSX3_AVAILABLE:
         return generate_pyttsx3_audio(character_name, text)
+    elif TTS_PROVIDER == "chatterbox" and CHATTERBOX_AVAILABLE:
+        return generate_chatterbox_audio(character_name, text)
     else:
         print(f"❌ TTS provider '{TTS_PROVIDER}' not available")
         return None
@@ -325,6 +367,41 @@ def generate_pyttsx3_audio(character_name: str, text: str) -> AudioSegment:
         return audio_segment
     except Exception as e:
         print(f"❌ pyttsx3 failed: {e}")
+        return None
+
+def generate_chatterbox_audio(character_name: str, text: str) -> AudioSegment:
+    """Generate audio using Chatterbox TTS"""
+    try:
+        # Get character configuration
+        char_config = CHATTERBOX_VOICES.get(character_name)
+        if not char_config:
+            print(f"❌ No Chatterbox configuration found for character: {character_name}")
+            return None
+        
+        reference_audio_path = char_config["reference_audio"]
+        emotion_intensity = char_config["emotion_intensity"]
+        
+        # Check if reference audio file exists
+        if not os.path.exists(reference_audio_path):
+            print(f"❌ Reference audio file not found: {reference_audio_path}")
+            print(f"💡 Please create the voices directory and add reference audio files:")
+            print(f"   - {reference_audio_path}")
+            print(f"   - Use 5-20 seconds of clean audio for best results")
+            return None
+        
+        # Generate audio using Chatterbox
+        audio_bytes = chatterbox_tts.generate(
+            text=text,
+            reference_audio=reference_audio_path,
+            emotion_intensity=emotion_intensity
+        )
+        
+        # Convert to AudioSegment
+        audio_segment = AudioSegment.from_file(BytesIO(audio_bytes), format="wav")
+        return audio_segment
+        
+    except Exception as e:
+        print(f"❌ Chatterbox TTS failed: {e}")
         return None
 
 # ---------- TTS with barge-in ----------
@@ -518,7 +595,7 @@ def main():
     parser = argparse.ArgumentParser(description="AI Character Hotline")
     parser.add_argument("--mode", choices=["normal", "bargein"], default="normal",
                        help="Conversation mode: normal or bargein")
-    parser.add_argument("--tts", choices=["elevenlabs", "azure", "gtts", "pyttsx3"], 
+    parser.add_argument("--tts", choices=["elevenlabs", "azure", "gtts", "pyttsx3", "chatterbox"], 
                        default=TTS_PROVIDER, help="TTS provider to use")
     args = parser.parse_args()
     
