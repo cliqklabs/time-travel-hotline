@@ -188,14 +188,22 @@ def is_phone_off_hook():
     if not IS_RASPBERRY_PI:
         return True  # Always assume off-hook in PC mode
     
-    return GPIO.input(HOOK_PIN) == GPIO.LOW  # LOW = off-hook
+    try:
+        return GPIO.input(HOOK_PIN) == GPIO.LOW  # LOW = off-hook
+    except Exception as e:
+        # Hardware not available, assume off-hook
+        return True
 
 def is_someone_nearby():
     """Check proximity sensor for someone approaching"""
     if not IS_RASPBERRY_PI:
         return False  # No proximity detection in PC mode
     
-    return GPIO.input(PROXIMITY_PIN) == GPIO.LOW  # LOW = someone detected
+    try:
+        return GPIO.input(PROXIMITY_PIN) == GPIO.LOW  # LOW = someone detected
+    except Exception as e:
+        # Hardware not available, assume no one nearby
+        return False
 
 # Rotary dial state machine
 rotary_state = 0
