@@ -611,16 +611,17 @@ def main_loop(text_mode=False):
         while True:
             try:
                 # Check if phone is still off-hook (Raspberry Pi only)
-                if IS_RASPBERRY_PI and not text_mode:
-                    try:
-                        hook_status = is_phone_off_hook()
-                        if not hook_status:
-                            print("📞 Phone hung up - ending call")
-                            break
-                    except Exception as e:
-                        # Hardware not available, skip hook detection
-                        print(f"🔧 Hook check failed: {e}, continuing...")
-                        pass
+                # Temporarily disabled hook detection for software mode
+                # if IS_RASPBERRY_PI and not text_mode:
+                #     try:
+                #         hook_status = is_phone_off_hook()
+                #         if not hook_status:
+                #             print("📞 Phone hung up - ending call")
+                #             break
+                #     except Exception as e:
+                #         # Hardware not available, skip hook detection
+                #         print(f"🔧 Hook check failed: {e}, continuing...")
+                #         pass
                 
                 if text_mode:
                     user_text = input("YOU: ").strip()
