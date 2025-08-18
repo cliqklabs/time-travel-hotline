@@ -552,12 +552,16 @@ def main_loop(text_mode=False):
     
     if IS_RASPBERRY_PI:
         print("🍓 Running on Raspberry Pi with hardware integration")
-        # Initialize GPIO
-        init_gpio()
-        
-        # Set up rotary dial interrupt
-        GPIO.add_event_detect(ROTARY_PIN_A, GPIO.BOTH, callback=rotary_callback, bouncetime=10)
-        GPIO.add_event_detect(ROTARY_PIN_B, GPIO.BOTH, callback=rotary_callback, bouncetime=10)
+        try:
+            # Initialize GPIO
+            init_gpio()
+            
+            # Set up rotary dial interrupt
+            GPIO.add_event_detect(ROTARY_PIN_A, GPIO.BOTH, callback=rotary_callback, bouncetime=10)
+            GPIO.add_event_detect(ROTARY_PIN_B, GPIO.BOTH, callback=rotary_callback, bouncetime=10)
+        except Exception as e:
+            print(f"⚠️  Hardware not connected: {e}")
+            print("📞 Running in software mode (no rotary dial)")
         
         # Proximity detection loop
         print("👁️  Monitoring for approaching users...")
