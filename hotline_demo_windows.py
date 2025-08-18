@@ -584,22 +584,30 @@ def main_loop(text_mode=False):
 
     try:
         if IS_RASPBERRY_PI and not text_mode:
-            # Use rotary dial for character selection
-            print("🔢 Please dial a character number:")
-            print("  3: Einstein, 2: Elvis, 5: Cleopatra, 7: Beth, 9: Elon")
-            
-            dialed_number = None
-            while dialed_number not in CHARACTERS:
-                dialed_number = get_dialed_number()
-                if dialed_number is None:
-                    print("⏰ No number dialed, please try again...")
-                    continue
-                print(f"🔢 Dialed: {dialed_number}")
-                if dialed_number not in CHARACTERS:
-                    print("❌ That number is not in service. Please try again.")
-                    dialed_number = None
-            
-            persona = CHARACTERS[dialed_number]
+            # Check if hardware is available for rotary dial
+            try:
+                # Test if we can access GPIO for dialing
+                test_gpio = GPIO.input(ROTARY_PIN_A)
+                # If we get here, hardware is available
+                print("🔢 Please dial a character number:")
+                print("  3: Einstein, 2: Elvis, 5: Cleopatra, 7: Beth, 9: Elon")
+                
+                dialed_number = None
+                while dialed_number not in CHARACTERS:
+                    dialed_number = get_dialed_number()
+                    if dialed_number is None:
+                        print("⏰ No number dialed, please try again...")
+                        continue
+                    print(f"🔢 Dialed: {dialed_number}")
+                    if dialed_number not in CHARACTERS:
+                        print("❌ That number is not in service. Please try again.")
+                        dialed_number = None
+                
+                persona = CHARACTERS[dialed_number]
+            except Exception as e:
+                # Hardware not available, use regular character selection
+                print("📞 Hardware not available - using software character selection")
+                persona = pick_character()
         else:
             persona = pick_character()
             
