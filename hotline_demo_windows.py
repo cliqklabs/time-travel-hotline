@@ -562,21 +562,23 @@ def main_loop(text_mode=False):
         except Exception as e:
             print(f"⚠️  Hardware not connected: {e}")
             print("📞 Running in software mode (no rotary dial)")
-        
-        # Proximity detection loop
-        print("👁️  Monitoring for approaching users...")
-        while not is_someone_nearby():
-            time.sleep(0.1)
-        
-        print("🔔 Someone approaching - ringing bell!")
-        ring_bell(3)  # Ring for 3 seconds
-        
-        # Wait for phone to be picked up
-        print("📞 Waiting for phone to be picked up...")
-        while not is_phone_off_hook():
-            time.sleep(0.1)
-        
-        print("📞 Phone picked up!")
+            # Skip hardware-dependent features when hardware not available
+            pass
+        else:
+            # Proximity detection loop (only if hardware is connected)
+            print("👁️  Monitoring for approaching users...")
+            while not is_someone_nearby():
+                time.sleep(0.1)
+            
+            print("🔔 Someone approaching - ringing bell!")
+            ring_bell(3)  # Ring for 3 seconds
+            
+            # Wait for phone to be picked up
+            print("📞 Waiting for phone to be picked up...")
+            while not is_phone_off_hook():
+                time.sleep(0.1)
+            
+            print("📞 Phone picked up!")
     else:
         input("Press Enter to start a session; Ctrl+C to quit...")
 
