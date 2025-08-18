@@ -192,6 +192,7 @@ def is_phone_off_hook():
         return GPIO.input(HOOK_PIN) == GPIO.LOW  # LOW = off-hook
     except Exception as e:
         # Hardware not available, assume off-hook
+        print(f"🔧 Hook detection: Hardware not available, assuming off-hook")
         return True
 
 def is_someone_nearby():
@@ -612,11 +613,13 @@ def main_loop(text_mode=False):
                 # Check if phone is still off-hook (Raspberry Pi only)
                 if IS_RASPBERRY_PI and not text_mode:
                     try:
-                        if not is_phone_off_hook():
+                        hook_status = is_phone_off_hook()
+                        if not hook_status:
                             print("📞 Phone hung up - ending call")
                             break
                     except Exception as e:
                         # Hardware not available, skip hook detection
+                        print(f"🔧 Hook check failed: {e}, continuing...")
                         pass
                 
                 if text_mode:
