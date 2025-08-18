@@ -109,7 +109,7 @@ CHARACTERS = {
     "2": {"name": "Elvis Presley",   "voice_pref": "NFG5qt843uXKj4pFvR7C"},   # Adam Stone - late night radio
     "5": {"name": "Cleopatra",       "voice_pref": "XB0fDUnXU5powFXDhCwa"},   # Charlotte
     "7": {"name": "Beth Dutton",     "voice_pref": "cgSgspJ2msm6clMCkdW9"},   # Jessica
-    "9": {"name": "Elon Musk",       "voice_pref": "CwhRBWXzGAHq8TQ4Fs17"},   # Roger
+    "9": {"name": "Elon Musk",       "voice_pref": "ZUpjkf57YJ1LGUWaKauJ"},   # Roger
 }
 SYSTEM_PROMPTS = {
     "Albert Einstein": "You are Albert Einstein in 1946: warm, witty, plain-spoken. Explain ideas with simple analogies. Keep replies in 2–5 sentences. Stay in character.",
