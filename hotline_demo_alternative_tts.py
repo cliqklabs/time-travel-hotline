@@ -45,11 +45,18 @@ except ImportError:
     print("⚠️  pyttsx3 not available")
 
 try:
-    from chatterbox_tts import Chatterbox
-    CHATTERBOX_AVAILABLE = True
+    from resemble import Resemble
+    RESEMBLE_AVAILABLE = True
 except ImportError:
-    CHATTERBOX_AVAILABLE = False
-    print("⚠️  Chatterbox TTS not available")
+    RESEMBLE_AVAILABLE = False
+    print("⚠️  ResembleAI not available")
+
+try:
+    from TTS.api import TTS
+    XTTS_AVAILABLE = True
+except ImportError:
+    XTTS_AVAILABLE = False
+    print("⚠️  XTTS (Coqui TTS) not available")
 
 # Raspberry Pi specific imports
 try:
@@ -139,7 +146,7 @@ BARGEIN_DELAY_MS = 1000       # longer delay before enabling barge-in to avoid e
 
 # ---------- TTS CONFIGURATION ----------
 # Choose your TTS provider here
-TTS_PROVIDER = "elevenlabs"  # Options: "elevenlabs", "azure", "gtts", "pyttsx3", "chatterbox"
+TTS_PROVIDER = "elevenlabs"  # Options: "elevenlabs", "azure", "gtts", "pyttsx3", "resemble", "xtts"
 
 # Voice configurations for different providers
 CHARACTERS = {
@@ -168,33 +175,33 @@ GTTS_LANGUAGES = {
     "Elon Musk": "en",
 }
 
-# Chatterbox TTS reference audio files and emotion settings
-CHATTERBOX_VOICES = {
-    "Albert Einstein": {
-        "reference_audio": "voices/einstein_reference.wav",
-        "emotion_intensity": 0.3,  # Thoughtful, measured
-        "description": "Warm, wise, German accent"
-    },
-    "Elvis Presley": {
-        "reference_audio": "voices/elvis_reference.wav", 
-        "emotion_intensity": 0.7,  # Charming, expressive
-        "description": "Southern charm, musical"
-    },
-    "Cleopatra": {
-        "reference_audio": "voices/cleopatra_reference.wav",
-        "emotion_intensity": 0.8,  # Regal, dramatic
-        "description": "Regal, commanding, exotic"
-    },
-    "Beth Dutton": {
-        "reference_audio": "voices/beth_reference.wav",
-        "emotion_intensity": 0.9,  # Sharp, intense
-        "description": "Fierce, cutting, powerful"
-    },
-    "Elon Musk": {
-        "reference_audio": "voices/elon_reference.wav",
-        "emotion_intensity": 0.4,  # Thoughtful, technical
-        "description": "Technical, reflective, visionary"
-    },
+# ResembleAI voice configurations
+RESEMBLE_VOICES = {
+	"Albert Einstein": {
+		"voice_uuid": None,
+		"reference_audio": "voices/einstein_reference.wav",
+		"description": "Warm, wise, German accent"
+	},
+	"Elvis Presley": {
+		"voice_uuid": "cb5730f9",
+		"reference_audio": "voices/elvis_reference.wav",
+		"description": "Southern charm, musical"
+	},
+	"Cleopatra": {
+		"voice_uuid": None,
+		"reference_audio": "voices/cleopatra_reference.wav",
+		"description": "Regal, commanding, exotic"
+	},
+	"Beth Dutton": {
+		"voice_uuid": None,
+		"reference_audio": "voices/beth_reference.wav",
+		"description": "Fierce, cutting, powerful"
+	},
+	"Elon Musk": {
+		"voice_uuid": None,
+		"reference_audio": "voices/elon_reference.wav",
+		"description": "Technical, reflective, visionary"
+	},
 }
 
 SYSTEM_PROMPTS = {
@@ -212,11 +219,37 @@ oai = None
 eleven = None
 azure_speech_config = None
 pyttsx3_engine = None
-chatterbox_tts = None
+resemble_project_uuid = None
+xtts_engine = None
+pygame_initialized = False  # Track pygame initialization
+
+# XTTS voice cloning configurations
+XTTS_VOICES = {
+    "Albert Einstein": {
+        "reference_audio": "voices/einstein_reference.wav",
+        "description": "Warm, wise, German accent"
+    },
+    "Elvis Presley": {
+        "reference_audio": "voices/elvis_reference.wav", 
+        "description": "Southern charm, musical"
+    },
+    "Cleopatra": {
+        "reference_audio": "voices/cleopatra_reference.wav",
+        "description": "Regal, commanding, exotic"
+    },
+    "Beth Dutton": {
+        "reference_audio": "voices/beth_reference.wav",
+        "description": "Fierce, cutting, powerful"
+    },
+    "Elon Musk": {
+        "reference_audio": "voices/elon_reference.wav",
+        "description": "Technical, reflective, visionary"
+    },
+}
 
 def init_clients():
     """Initialize API clients when needed"""
-    global dg, oai, eleven, azure_speech_config, pyttsx3_engine, chatterbox_tts
+    global dg, oai, eleven, azure_speech_config, pyttsx3_engine, resemble_project_uuid, xtts_engine
     
     if dg is None:
         dg = Deepgram(os.getenv("DEEPGRAM_API_KEY"))
@@ -236,9 +269,54 @@ def init_clients():
     elif TTS_PROVIDER == "pyttsx3" and PYTTSX3_AVAILABLE:
         if pyttsx3_engine is None:
             pyttsx3_engine = pyttsx3.init()
-    elif TTS_PROVIDER == "chatterbox" and CHATTERBOX_AVAILABLE:
-        if chatterbox_tts is None:
-            chatterbox_tts = Chatterbox()
+    elif TTS_PROVIDER == "resemble" and RESEMBLE_AVAILABLE:
+        if resemble_project_uuid is None:
+            # Initialize ResembleAI API key
+            Resemble.api_key(os.getenv("RESEMBLE_API_KEY"))
+            try:
+                # Get the first project (you can modify this to use a specific project)
+                projects = Resemble.v2.projects.all(1, 10)
+                if projects['items']:
+                    resemble_project_uuid = projects['items'][0]['uuid']
+                    print(f"✅ ResembleAI initialized - using project: {resemble_project_uuid}")
+                else:
+                    print("❌ No ResembleAI projects found - please create a project in your dashboard")
+                    resemble_project_uuid = None
+            except Exception as e:
+                print(f"❌ Failed to get ResembleAI projects: {e}")
+                print("Please check your API key and ensure you have at least one project")
+                resemble_project_uuid = None
+    elif TTS_PROVIDER == "xtts" and XTTS_AVAILABLE:
+        if xtts_engine is None:
+            try:
+                import torch
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                xtts_engine = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+                print(f"✅ XTTS initialized on {device.upper()} - voice cloning ready")
+            except Exception as e:
+                print(f"❌ XTTS initialization failed: {e}")
+                xtts_engine = None
+
+def create_resemble_voice(character_name: str):
+    """Get the existing ResembleAI voice UUID for a character"""
+    try:
+        char_config = RESEMBLE_VOICES.get(character_name)
+        if not char_config:
+            print(f"❌ No ResembleAI configuration found for character: {character_name}")
+            return None
+        
+        voice_uuid = char_config["voice_uuid"]
+        
+        if not voice_uuid:
+            print(f"❌ No voice UUID configured for character: {character_name}")
+            return None
+        
+        print(f"✅ Using existing ResembleAI voice for {character_name}: {voice_uuid}")
+        return voice_uuid
+        
+    except Exception as e:
+        print(f"❌ Failed to get ResembleAI voice for {character_name}: {e}")
+        return None
 
 # Playback state (so we can stop it on barge-in)
 current_playback = None
@@ -258,8 +336,10 @@ def generate_tts_audio(character_name: str, text: str) -> AudioSegment:
         return generate_gtts_audio(character_name, text)
     elif TTS_PROVIDER == "pyttsx3" and PYTTSX3_AVAILABLE:
         return generate_pyttsx3_audio(character_name, text)
-    elif TTS_PROVIDER == "chatterbox" and CHATTERBOX_AVAILABLE:
-        return generate_chatterbox_audio(character_name, text)
+    elif TTS_PROVIDER == "resemble" and RESEMBLE_AVAILABLE:
+        return generate_resemble_audio(character_name, text)
+    elif TTS_PROVIDER == "xtts" and XTTS_AVAILABLE:
+        return generate_xtts_audio(character_name, text)
     else:
         print(f"❌ TTS provider '{TTS_PROVIDER}' not available")
         return None
@@ -369,40 +449,185 @@ def generate_pyttsx3_audio(character_name: str, text: str) -> AudioSegment:
         print(f"❌ pyttsx3 failed: {e}")
         return None
 
-def generate_chatterbox_audio(character_name: str, text: str) -> AudioSegment:
-    """Generate audio using Chatterbox TTS"""
+def generate_resemble_audio(character_name: str, text: str) -> AudioSegment:
+    """Generate audio using ResembleAI voice cloning"""
+    try:
+        # Get voice UUID
+        voice_uuid = create_resemble_voice(character_name)
+        if not voice_uuid:
+            print(f"❌ No ResembleAI voice available for character: {character_name}")
+            return None
+        
+        print(f"🎭 Generating ResembleAI audio for {character_name}...")
+        
+        # Use ResembleAI clips API for voice cloning
+        init_clients()  # Make sure ResembleAI is initialized
+        
+        # Create clip using ResembleAI
+        response = Resemble.v2.clips.create_sync(
+            project_uuid=resemble_project_uuid,
+            voice_uuid=voice_uuid,
+            body=text,
+            title=f"{character_name} Response"
+        )
+        
+        # Check for API errors first
+        if not response.get('success'):
+            error_msg = response.get('message', 'Unknown error')
+            print(f"❌ ResembleAI API error: {error_msg}")
+            if 'usage limit' in error_msg.lower():
+                print("💡 You've reached your ResembleAI usage limit. Please upgrade your account or wait for reset.")
+            return None
+        
+        # Try different possible audio URL fields
+        audio_url = None
+        if response.get('success') and 'item' in response:
+            item = response['item']
+            if 'audio_src' in item:
+                audio_url = item['audio_src']
+            elif 'audio_url' in item:
+                audio_url = item['audio_url']
+            elif 'url' in item:
+                audio_url = item['url']
+        elif 'audio_src' in response:
+            audio_url = response['audio_src']
+        elif 'audio_url' in response:
+            audio_url = response['audio_url']
+        elif 'url' in response:
+            audio_url = response['url']
+        elif 'data' in response and isinstance(response['data'], dict):
+            if 'audio_src' in response['data']:
+                audio_url = response['data']['audio_src']
+            elif 'audio_url' in response['data']:
+                audio_url = response['data']['audio_url']
+        
+        if not audio_url:
+            print(f"❌ No audio URL found in response")
+            return None
+        
+        # Download the audio from the URL
+        import requests
+        
+        audio_response = requests.get(audio_url)
+        
+        if audio_response.status_code == 200:
+            # Convert to AudioSegment
+            audio_segment = AudioSegment.from_wav(BytesIO(audio_response.content))
+            
+            # Boost volume by 15dB to make it louder
+            audio_segment = audio_segment + 15
+            
+            print(f"📊 Audio volume: {audio_segment.dBFS}dB")
+            return audio_segment
+        else:
+            print(f"❌ Failed to download ResembleAI audio: {audio_response.status_code}")
+            return None
+        
+    except Exception as e:
+        print(f"❌ ResembleAI TTS failed: {e}")
+        return None
+
+def generate_xtts_audio(character_name: str, text: str) -> AudioSegment:
+    """Generate audio using XTTS voice cloning"""
     try:
         # Get character configuration
-        char_config = CHATTERBOX_VOICES.get(character_name)
+        char_config = XTTS_VOICES.get(character_name)
         if not char_config:
-            print(f"❌ No Chatterbox configuration found for character: {character_name}")
+            print(f"❌ No XTTS configuration found for character: {character_name}")
             return None
         
         reference_audio_path = char_config["reference_audio"]
-        emotion_intensity = char_config["emotion_intensity"]
         
-        # Check if reference audio file exists
         if not os.path.exists(reference_audio_path):
             print(f"❌ Reference audio file not found: {reference_audio_path}")
-            print(f"💡 Please create the voices directory and add reference audio files:")
-            print(f"   - {reference_audio_path}")
-            print(f"   - Use 5-20 seconds of clean audio for best results")
             return None
         
-        # Generate audio using Chatterbox
-        audio_bytes = chatterbox_tts.generate(
+        # Generate audio using XTTS voice cloning
+        wav = xtts_engine.tts(
             text=text,
-            reference_audio=reference_audio_path,
-            emotion_intensity=emotion_intensity
+            speaker_wav=reference_audio_path,
+            language="en"
         )
         
         # Convert to AudioSegment
-        audio_segment = AudioSegment.from_file(BytesIO(audio_bytes), format="wav")
+        import soundfile as sf
+        
+        # Save to temporary WAV file
+        temp_file = "temp_xtts.wav"
+        sf.write(temp_file, wav, xtts_engine.synthesizer.output_sample_rate, format='WAV')
+        
+        # Load as AudioSegment
+        audio_segment = AudioSegment.from_wav(temp_file)
+        
+        # Clean up temp file
+        os.remove(temp_file)
         return audio_segment
         
     except Exception as e:
-        print(f"❌ Chatterbox TTS failed: {e}")
+        print(f"❌ XTTS failed: {e}")
         return None
+
+# ---------- AUDIO CAPTURE ----------
+def record_until_silence():
+    """Record audio until silence is detected"""
+    vad = webrtcvad.Vad(VAD_SENSITIVITY)
+    buf, q = [], queue.Queue()
+    def cb(indata, frames, time_info, status): q.put(bytes(indata))
+    with sd.RawInputStream(samplerate=SAMPLE_RATE,
+                           blocksize=int(SAMPLE_RATE * FRAME_MS / 1000),
+                           channels=CHANNELS, dtype='int16', callback=cb):
+        start = time.time()
+        last_voice_ms = 0
+        while True:
+            chunk = q.get()
+            buf.append(chunk)
+            if len(chunk) == int(SAMPLE_RATE * FRAME_MS / 1000) * 2:
+                if vad.is_speech(chunk, SAMPLE_RATE) and is_loud_enough(chunk):
+                    last_voice_ms = (time.time() - start) * 1000
+            elapsed_ms = (time.time() - start) * 1000
+            if elapsed_ms > MAX_UTTERANCE_SEC * 1000: break
+            if last_voice_ms > 0 and (elapsed_ms - last_voice_ms) > SILENCE_TAIL_MS: break
+    return b"".join(buf)
+
+def pcm16_to_wav_bytes(pcm_bytes, sample_rate=16000, channels=1):
+    """Convert PCM16 bytes to WAV format"""
+    bio = BytesIO()
+    with wave.open(bio, 'wb') as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(2)  # 16-bit
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_bytes)
+    return bio.getvalue()
+
+# ---------- ASR (Deepgram) ----------
+import asyncio
+
+def asr_deepgram_pcm16(audio_bytes):
+    """Convert speech to text using Deepgram"""
+    try:
+        init_clients()  # Initialize clients if needed
+        wav_bytes = pcm16_to_wav_bytes(audio_bytes, SAMPLE_RATE, CHANNELS)
+        source = {"buffer": wav_bytes, "mimetype": "audio/wav"}
+        
+        # Create a new event loop for this async call
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            resp = loop.run_until_complete(dg.transcription.prerecorded(source, {
+                "model": "nova-2",
+                "smart_format": True,
+                "punctuate": True,
+                "language": "en-US"
+            }))
+            alt = resp["results"]["channels"][0]["alternatives"][0]
+            return alt["transcript"].strip() if alt["transcript"] else ""
+        finally:
+            loop.close()
+            
+    except Exception as e:
+        print(f"❌ Speech recognition failed: {e}")
+        return ""
 
 # ---------- TTS with barge-in ----------
 def speak_tts_with_barge_in(character_name: str, text: str):
@@ -417,6 +642,8 @@ def speak_tts_with_barge_in(character_name: str, text: str):
         if seg is None:
             print("❌ Failed to generate TTS audio")
             return
+        
+        print(f"✅ TTS audio generated: {len(seg)}ms, {seg.channels} channels, {seg.frame_rate}Hz")
         
         # Store TTS audio for echo detection
         global current_tts_audio
@@ -433,8 +660,64 @@ def speak_tts_with_barge_in(character_name: str, text: str):
     def _play(segment: AudioSegment):
         global current_playback
         try:
-            with playback_lock:
-                current_playback = play_buffer(segment.raw_data, segment.channels, segment.sample_width, segment.frame_rate)
+            print(f"🔊 Starting audio playback...")
+            print(f"   Audio details: {len(segment)}ms, {segment.channels} channels, {segment.frame_rate}Hz, {segment.sample_width} bytes")
+            print(f"   Raw data length: {len(segment.raw_data)} bytes")
+            
+            # Use pygame for ResembleAI audio, simpleaudio for others
+            if TTS_PROVIDER == "resemble":
+                import pygame
+                global pygame_initialized
+                if not pygame_initialized:
+                    pygame.mixer.init(frequency=segment.frame_rate, size=-16, channels=segment.channels)
+                    pygame_initialized = True
+                
+                # Save to temporary file for pygame
+                temp_file = "temp_playback.wav"
+                segment.export(temp_file, format="wav")
+                
+                pygame.mixer.music.load(temp_file)
+                pygame.mixer.music.play()
+                
+                # Create a simple wrapper to track playback state
+                class PygamePlayback:
+                    def __init__(self, temp_file):
+                        self.temp_file = temp_file
+                        self._playing = True
+                    
+                    def is_playing(self):
+                        if not pygame.mixer.music.get_busy():
+                            self._playing = False
+                            try:
+                                os.remove(self.temp_file)
+                            except:
+                                pass
+                        return self._playing
+                    
+                    def stop(self):
+                        pygame.mixer.music.stop()
+                        self._playing = False
+                        try:
+                            os.remove(self.temp_file)
+                        except:
+                            pass
+                
+                current_playback = PygamePlayback(temp_file)
+                print(f"✅ Pygame audio playback started")
+                
+            else:
+                # Use simpleaudio for other TTS providers
+                with playback_lock:
+                    current_playback = play_buffer(segment.raw_data, segment.channels, segment.sample_width, segment.frame_rate)
+                print(f"✅ Simpleaudio playback started")
+            
+            # Wait a moment and check if it's still playing
+            time.sleep(0.1)
+            if current_playback and current_playback.is_playing():
+                print(f"✅ Audio is actively playing")
+            else:
+                print(f"❌ Audio stopped playing immediately")
+                
         except Exception as e:
             print(f"❌ Audio playback failed: {e}")
             with playback_lock:
@@ -556,6 +839,16 @@ def cleanup_gpio():
     if IS_RASPBERRY_PI:
         GPIO.cleanup()
         print("✅ GPIO cleaned up")
+    
+    # Clean up pygame if it was initialized
+    global pygame_initialized
+    if pygame_initialized:
+        try:
+            import pygame
+            pygame.mixer.quit()
+            print("✅ Pygame mixer cleaned up")
+        except:
+            pass
 
 def ring_bell(duration=2):
     """Ring the phone bell for specified duration"""
@@ -592,15 +885,17 @@ def is_someone_nearby():
 
 # ---------- MAIN CONVERSATION LOOP ----------
 def main():
+    global ENABLE_BARGEIN
+    global TTS_PROVIDER
+    
     parser = argparse.ArgumentParser(description="AI Character Hotline")
     parser.add_argument("--mode", choices=["normal", "bargein"], default="normal",
                        help="Conversation mode: normal or bargein")
-    parser.add_argument("--tts", choices=["elevenlabs", "azure", "gtts", "pyttsx3", "chatterbox"], 
+    parser.add_argument("--tts", choices=["elevenlabs", "azure", "gtts", "pyttsx3", "resemble", "xtts"], 
                        default=TTS_PROVIDER, help="TTS provider to use")
     args = parser.parse_args()
     
     # Set global configuration based on args
-    global ENABLE_BARGEIN, TTS_PROVIDER
     ENABLE_BARGEIN = (args.mode == "bargein")
     TTS_PROVIDER = args.tts
     
@@ -665,9 +960,17 @@ def main():
                     print("📞 Phone hung up")
                     break
                 
-                # Get user input (simulated speech-to-text)
-                print("\n🎤 Listening... (type your message or 'hangup' to end call)")
-                user_input = input("You: ").strip()
+                # Get user input via speech recognition
+                print("\n🎤 Listening... (speak now, or say 'hangup' to end call)")
+                pcm = record_until_silence()
+                if len(pcm) < 16000:  # Less than 1 second
+                    continue
+                
+                print("📝 Transcribing...")
+                user_input = asr_deepgram_pcm16(pcm)
+                print(f"You: {user_input}")
+                if not user_input:
+                    continue
                 
                 if user_input.lower() in ['hangup', 'hang up', 'goodbye', 'bye']:
                     print("👋 Ending call...")

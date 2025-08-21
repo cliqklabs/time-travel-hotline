@@ -1,248 +1,262 @@
 # AI Character Hotline - Alternative TTS Providers
 
-This version of the AI Character Hotline supports multiple Text-to-Speech providers, allowing you to choose the best option for your needs.
+This version of the AI Character Hotline supports multiple Text-to-Speech (TTS) providers, allowing you to choose between different voice synthesis options based on your needs.
 
-## 🎯 Features
+## Multiple TTS Providers
 
-- **Multiple TTS Providers**: ElevenLabs, Azure Speech, Google TTS (gTTS), pyttsx3 (offline), and Chatterbox (voice cloning)
-- **Easy Switching**: Change TTS providers via command line argument
-- **Cross-Platform**: Works on Windows, macOS, Linux, and Raspberry Pi
-- **Barge-in Support**: Interrupt AI speech with your own voice
-- **Character Voices**: Different voices for each AI character
-- **Voice Cloning**: Chatterbox supports zero-shot voice cloning from short audio clips
+The system now supports:
 
-## 🚀 Quick Start
+1. **ElevenLabs** (Original) - High-quality, character-specific voices
+2. **Azure Speech** - Microsoft's neural voices
+3. **Google Text-to-Speech (gTTS)** - Free, online TTS
+4. **pyttsx3** - Free, offline TTS using system voices
+5. **ResembleAI** - Professional voice cloning with reference audio
+6. **XTTS (Coqui TTS)** - Open-source voice cloning
+
+## Quick Start
 
 ### 1. Install Dependencies
 
 ```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment (Windows)
+venv\Scripts\activate
+
+# Install requirements
 pip install -r requirements_alternative_tts.txt
 ```
 
 ### 2. Set Up Environment Variables
 
-Create a `.env` file with your API keys:
+Create a `.env` file in the project root:
 
 ```env
 # Required for all providers
-OPENAI_API_KEY=your_openai_key
-DEEPGRAM_API_KEY=your_deepgram_key
+OPENAI_API_KEY=your_openai_api_key
+DEEPGRAM_API_KEY=your_deepgram_api_key
 
-# ElevenLabs (optional)
-ELEVEN_API_KEY=your_elevenlabs_key
+# ElevenLabs (original)
+ELEVEN_API_KEY=your_elevenlabs_api_key
 
 # Azure Speech (optional)
 AZURE_SPEECH_KEY=your_azure_speech_key
 AZURE_SPEECH_REGION=your_azure_region
 
-# gTTS and pyttsx3 don't require API keys
+# ResembleAI (optional)
+RESEMBLE_API_KEY=your_resemble_api_key
 ```
 
-### 3. Run the Application
+### 3. Run the Hotline
 
 ```bash
-# Use ElevenLabs (default)
+# Use default TTS provider (ElevenLabs)
 python hotline_demo_alternative_tts.py
 
-# Use Azure Speech
+# Use specific TTS provider
+python hotline_demo_alternative_tts.py --tts resemble
+python hotline_demo_alternative_tts.py --tts xtts
 python hotline_demo_alternative_tts.py --tts azure
-
-# Use Google TTS
 python hotline_demo_alternative_tts.py --tts gtts
-
-# Use offline pyttsx3
 python hotline_demo_alternative_tts.py --tts pyttsx3
 
-# Use Chatterbox voice cloning
-python hotline_demo_alternative_tts.py --tts chatterbox
-
-# Enable barge-in mode
-python hotline_demo_alternative_tts.py --tts azure --mode bargein
+# Enable barge-in mode (interrupt AI while speaking)
+python hotline_demo_alternative_tts.py --tts resemble --mode bargein
 ```
 
-## 🎤 TTS Provider Comparison
+## TTS Provider Comparison
 
-| Provider | Quality | Cost | Offline | Setup Difficulty |
-|----------|---------|------|---------|------------------|
-| **ElevenLabs** | ⭐⭐⭐⭐⭐ | Paid | ❌ | Easy |
-| **Chatterbox** | ⭐⭐⭐⭐⭐ | Free | ✅ | Medium |
-| **Azure Speech** | ⭐⭐⭐⭐ | Paid | ❌ | Medium |
-| **Google TTS** | ⭐⭐⭐ | Free | ❌ | Easy |
-| **pyttsx3** | ⭐⭐ | Free | ✅ | Easy |
+| Provider | Quality | Speed | Cost | Voice Cloning | Offline | Setup |
+|----------|---------|-------|------|---------------|---------|-------|
+| ElevenLabs | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Paid | ✅ | ❌ | Easy |
+| Azure Speech | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Paid | ❌ | ❌ | Easy |
+| ResembleAI | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Paid | ✅ | ❌ | Easy |
+| XTTS | ⭐⭐⭐⭐ | ⭐⭐⭐ | Free | ✅ | ✅ | Medium |
+| gTTS | ⭐⭐⭐ | ⭐⭐⭐ | Free | ❌ | ❌ | Easy |
+| pyttsx3 | ⭐⭐ | ⭐⭐⭐⭐ | Free | ❌ | ✅ | Easy |
 
-### ElevenLabs
-- **Best quality** and most natural-sounding voices
-- **Character-specific voices** with unique personalities
-- **Paid service** with usage limits
-- **Requires API key**
+## Voice Cloning Mode
 
-### Chatterbox
-- **MIT licensed** open-source voice cloning
-- **Zero-shot cloning** from 5-20 seconds of audio
-- **Emotion control** for character personality
-- **Runs locally** (GPU recommended) or on Colab
-- **Outperforms ElevenLabs** in some benchmarks
-- **Requires reference audio files** for each character
+### ResembleAI Voice Cloning
 
-### Azure Speech
-- **High quality** neural voices
-- **Good variety** of voices and languages
-- **Paid service** but often cheaper than ElevenLabs
-- **Requires Azure account and API key**
+ResembleAI provides professional-grade voice cloning using reference audio files:
 
-### Google TTS (gTTS)
-- **Free** and reliable
-- **Good quality** for basic use
-- **Limited voice options** (no character-specific voices)
-- **Requires internet connection**
+1. **Set up ResembleAI account** at [app.resemble.ai](https://app.resemble.ai)
+2. **Get your API key** from the ResembleAI dashboard
+3. **Add API key to `.env`**:
+   ```env
+   RESEMBLE_API_KEY=your_resemble_api_key
+   ```
+4. **Place reference audio files** in the `voices/` directory:
+   - `elon_reference.wav` - Elon Musk voice sample
+   - `elvis_reference.wav` - Elvis Presley voice sample
+   - `einstein_reference.wav` - Albert Einstein voice sample
+   - `cleopatra_reference.wav` - Cleopatra voice sample
+   - `beth_reference.wav` - Beth Dutton voice sample
 
-### pyttsx3 (Offline)
-- **Completely free** and offline
-- **System voices** only (quality varies by OS)
-- **No internet required**
-- **Limited voice customization**
+5. **Run with ResembleAI**:
+   ```bash
+   python hotline_demo_alternative_tts.py --tts resemble
+   ```
 
-## 🔧 Configuration
+**Features:**
+- Professional voice cloning quality
+- Automatic voice creation from reference audio
+- High-quality output (24kHz WAV)
+- Voice caching (created once, reused)
 
-### Changing Default TTS Provider
+### XTTS Voice Cloning
 
-Edit the `TTS_PROVIDER` variable in the script:
+XTTS provides free, open-source voice cloning:
 
-```python
-TTS_PROVIDER = "azure"  # Change from "elevenlabs" to your preferred provider
-```
+1. **Install XTTS** (included in requirements):
+   ```bash
+   pip install TTS
+   ```
 
-### Voice Configuration
+2. **Place reference audio files** in the `voices/` directory (same as ResembleAI)
 
-Each TTS provider has different voice configurations:
+3. **Run with XTTS**:
+   ```bash
+   python hotline_demo_alternative_tts.py --tts xtts
+   ```
 
-#### ElevenLabs
-```python
-CHARACTERS = {
-    "3": {"name": "Albert Einstein", "voice_pref": "JBFqnCBsd6RMkjVDRZzb"},
-    # ... more characters
-}
-```
+**Features:**
+- Free and open-source
+- Local processing (no API calls)
+- GPU acceleration support
+- Good voice cloning quality
 
-#### Azure Speech
-```python
-AZURE_VOICES = {
-    "Albert Einstein": "en-US-DavisNeural",
-    "Elvis Presley": "en-US-GuyNeural",
-    # ... more characters
-}
-```
+## Setup Instructions
 
-#### gTTS and pyttsx3
-```python
-GTTS_LANGUAGES = {
-    "Albert Einstein": "en",
-    "Elvis Presley": "en",
-    # ... more characters
-}
-```
+### ResembleAI Setup
 
-#### Chatterbox
-```python
-CHATTERBOX_VOICES = {
-    "Albert Einstein": {
-        "reference_audio": "voices/einstein_reference.wav",
-        "emotion_intensity": 0.3,  # Thoughtful, measured
-    },
-    "Elvis Presley": {
-        "reference_audio": "voices/elvis_reference.wav", 
-        "emotion_intensity": 0.7,  # Charming, expressive
-    },
-    # ... more characters
-}
-```
+1. **Sign up** at [app.resemble.ai](https://app.resemble.ai)
+2. **Create a project** in your ResembleAI dashboard
+3. **Get your API key** from Account Settings
+4. **Add to `.env`**:
+   ```env
+   RESEMBLE_API_KEY=your_api_key_here
+   ```
+5. **Install the ResembleAI library**:
+   ```bash
+   pip install resemble
+   ```
 
-## 🎭 Available Characters
+### Reference Audio Requirements
 
-1. **Albert Einstein** - Wise, thoughtful physicist
-2. **Elvis Presley** - Charming, playful entertainer
-3. **Cleopatra** - Regal, strategic queen
-4. **Beth Dutton** - Fierce, sharp businesswoman
-5. **Elon Musk** - Visionary, technical entrepreneur
+For voice cloning (ResembleAI and XTTS), reference audio files should be:
 
-## 🔄 Switching Between Providers
+- **Format**: WAV, MP3, or M4A
+- **Duration**: 10-30 seconds of clear speech
+- **Quality**: High quality, minimal background noise
+- **Content**: Natural speech, not singing or effects
+- **Language**: English (for best results)
 
-You can easily switch TTS providers without changing code:
+### Example Reference Audio Setup
 
 ```bash
-# Try different providers
-python hotline_demo_alternative_tts.py --tts elevenlabs
-python hotline_demo_alternative_tts.py --tts chatterbox
-python hotline_demo_alternative_tts.py --tts azure
-python hotline_demo_alternative_tts.py --tts gtts
-python hotline_demo_alternative_tts.py --tts pyttsx3
+# Create voices directory
+mkdir voices
+
+# Add your reference audio files
+# Example: elon_reference.wav, elvis_reference.wav, etc.
 ```
 
-## 🛠️ Troubleshooting
-
-### ElevenLabs Issues
-- Check your API key is valid
-- Ensure you have sufficient credits
-- Verify voice IDs exist in your account
-
-### Azure Speech Issues
-- Verify your Azure Speech key and region
-- Check your Azure subscription is active
-- Ensure the voice names are correct
-
-### gTTS Issues
-- Check internet connection
-- Some networks may block Google services
-- Try different language codes if needed
-
-### pyttsx3 Issues
-- Install system TTS engines (e.g., espeak on Linux)
-- On Windows, ensure Windows Speech is enabled
-- On macOS, ensure system voices are installed
-
-### Chatterbox Issues
-- Install Chatterbox: `pip install chatterbox-tts`
-- Ensure reference audio files exist in `voices/` directory
-- Check audio quality (5-20 seconds, clear, no background noise)
-- GPU recommended for best performance (6-7 GB VRAM)
-- Run setup script: `python setup_chatterbox.py`
-
-## 📝 Usage Examples
+## Usage Examples
 
 ### Basic Usage
+
 ```bash
-# Start with default ElevenLabs
-python hotline_demo_alternative_tts.py
+# Use ResembleAI for voice cloning
+python hotline_demo_alternative_tts.py --tts resemble
+
+# Use XTTS for free voice cloning
+python hotline_demo_alternative_tts.py --tts xtts
+
+# Use Azure Speech for high-quality TTS
+python hotline_demo_alternative_tts.py --tts azure
 ```
 
-### With Barge-in
+### Advanced Usage
+
 ```bash
-# Use Azure with barge-in enabled
-python hotline_demo_alternative_tts.py --tts azure --mode bargein
+# Enable barge-in mode (interrupt AI while speaking)
+python hotline_demo_alternative_tts.py --tts resemble --mode bargein
+
+# Use microphone input for conversation
+# (Automatically enabled in all modes)
 ```
 
-### Offline Mode
-```bash
-# Use pyttsx3 for offline operation
-python hotline_demo_alternative_tts.py --tts pyttsx3
-```
+## Troubleshooting
 
-### Voice Cloning Mode
-```bash
-# Use Chatterbox for voice cloning
-python hotline_demo_alternative_tts.py --tts chatterbox
-```
+### ResembleAI Issues
 
-## 🤝 Contributing
+**"No ResembleAI projects found"**
+- Create a project in your ResembleAI dashboard
+- Ensure your API key is correct
 
-To add a new TTS provider:
+**"Failed to create ResembleAI voice"**
+- Check reference audio file exists and is valid
+- Verify API key has sufficient credits
+- Ensure audio file meets quality requirements
 
-1. Add the import and availability check
-2. Create a `generate_[provider]_audio()` function
-3. Add the provider to the `generate_tts_audio()` function
-4. Update the argument parser
-5. Add voice configuration if needed
+**"Failed to download ResembleAI audio"**
+- Check internet connection
+- Verify API key is valid
+- Check ResembleAI service status
 
-## 📄 License
+### XTTS Issues
 
-Same as the main project. See LICENSE file for details.
+**"XTTS initialization failed"**
+- Install PyTorch with CUDA support for GPU acceleration
+- Ensure sufficient disk space for model download
+- Check internet connection for initial model download
+
+**"Reference audio file not found"**
+- Place reference audio files in `voices/` directory
+- Check file names match configuration
+
+### General Issues
+
+**"TTS provider not available"**
+- Install missing dependencies: `pip install -r requirements_alternative_tts.txt`
+- Check import statements in the script
+
+**Audio playback issues**
+- Check system audio settings
+- Ensure audio drivers are installed
+- Try different audio output devices
+
+## Performance Tips
+
+### ResembleAI
+- Voice creation happens once per character
+- Subsequent uses are much faster
+- High-quality output (24kHz) for best results
+
+### XTTS
+- First run downloads models (~2GB)
+- GPU acceleration significantly improves speed
+- Models are cached locally for future use
+
+### General
+- Use barge-in mode for more natural conversations
+- Reference audio quality directly affects cloning quality
+- Longer reference audio (20-30 seconds) often produces better results
+
+## Contributing
+
+To add new TTS providers:
+
+1. Add import and availability check
+2. Add voice configuration
+3. Implement `generate_[provider]_audio()` function
+4. Update `generate_tts_audio()` function
+5. Add to command-line arguments
+6. Update requirements and documentation
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

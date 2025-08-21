@@ -88,12 +88,12 @@ def print_setup_instructions():
 def check_chatterbox_installation():
     """Check if Chatterbox is properly installed"""
     try:
-        import chatterbox_tts
+        import chatterbox
         print("✅ Chatterbox TTS is installed")
         return True
     except ImportError:
         print("❌ Chatterbox TTS is not installed")
-        print("   Run: pip install chatterbox-tts")
+        print("   Run: python -m pip install chatterbox-tts")
         return False
 
 def main():
@@ -103,7 +103,7 @@ def main():
     # Check installation
     if not check_chatterbox_installation():
         print("\nPlease install Chatterbox TTS first:")
-        print("pip install chatterbox-tts")
+        print("python -m pip install chatterbox-tts")
         return
     
     # Create directory structure
