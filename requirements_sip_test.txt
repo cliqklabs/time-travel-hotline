@@ -1,0 +1,11 @@
+# SIP Testing Requirements
+# Install with: pip install -r requirements_sip_test.txt
+
+# Option 1: pjsua2 (more comprehensive SIP library)
+# pjsua2>=2.13
+
+# Option 2: Simple socket-based approach (no additional dependencies needed)
+# Uses only Python standard library
+
+# Optional: for better debugging
+# netifaces>=0.11.0
