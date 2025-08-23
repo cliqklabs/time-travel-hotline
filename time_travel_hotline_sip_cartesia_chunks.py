@@ -340,281 +340,147 @@ Content-Length: 0
         except Exception:
             pass
     
-    def send_audio_data(self, audio_data, is_greeting=False):
-        """Send audio data as RTP packets with improved barge-in support"""
+    def send_audio_data(self, audio_generator, is_greeting=False):
+        """Send audio data as RTP packets with barge-in support using streaming generator"""
         if not self.rtp_socket or not self.remote_rtp_port:
             return False
             
-        # Reset barge-in state
+        # Start barge-in monitoring in background (with grace period)
         self.stop_speaking = False
-        self.barge_in_triggered = False  # New flag for immediate stopping
         
-        # Clear RTP buffer to avoid old audio interfering with barge-in
+        # Clear RTP buffer before speaking to avoid old audio interfering with barge-in
         self.clear_rtp_buffer()
         
-        # Configurable grace periods
+        # Simple barge-in: check frequently in audio loop after grace period
         grace_period = BARGE_IN_GREETING_GRACE if is_greeting else BARGE_IN_RESPONSE_GRACE
-        print(f"🎧 Barge-in will start after {grace_period}s of actual speech")
+        speech_start_time = None
+        barge_in_enabled_time = None
+        print(f"🎧 Barge-in enabled after {grace_period}s grace period (buffer cleared)")
             
         try:
-            # Convert audio to 8kHz mono if needed
-            if len(audio_data.shape) > 1:
-                audio_data = audio_data.mean(axis=1)
-            
-            # Apply basic volume control and filtering
-            audio_data = np.clip(audio_data, -0.9, 0.9)
-            audio_data = audio_data * 0.85
-            
-            # Convert to mu-law (G.711)
-            audio_bytes = self.linear_to_mulaw(audio_data)
-            
-            # Send in 160-byte chunks (20ms at 8kHz) with improved barge-in
-            speech_start_time = None
-            barge_in_enabled_time = None
-            
-            for i in range(0, len(audio_bytes), CHUNK_SIZE):
-                # Check for immediate stop FIRST before any processing
-                if self.barge_in_triggered:
-                    print("🛑 IMMEDIATE STOP - Barge-in triggered!")
-                    return True
+            for raw_chunk in audio_generator:
+                if raw_chunk is None:
+                    break
+                
+                # Convert raw 16-bit PCM chunk to float32
+                chunk_array = np.frombuffer(raw_chunk, dtype=np.int16).astype(np.float32) / 32768.0
+                
+                # Apply filters if available (minimal for speed)
+                if SCIPY_AVAILABLE:
+                    nyquist = SAMPLE_RATE / 2
+                    low = 400 / nyquist
+                    high = 3200 / nyquist
+                    b_hp, a_hp = signal.butter(2, low, btype='high')
+                    chunk_array = signal.filtfilt(b_hp, a_hp, chunk_array)
+                    b_lp, a_lp = signal.butter(3, high, btype='low')
+                    chunk_array = signal.filtfilt(b_lp, a_lp, chunk_array)
+                
+                chunk_array = np.clip(chunk_array, -0.9, 0.9) * 0.85
+                chunk_bytes = self.linear_to_mulaw(chunk_array)
+                
+                # Send in sub-chunks
+                for i in range(0, len(chunk_bytes), CHUNK_SIZE):
+                    sub_chunk = chunk_bytes[i:i+CHUNK_SIZE]
+                    if len(sub_chunk) < CHUNK_SIZE:
+                        sub_chunk += b'\x00' * (CHUNK_SIZE - len(sub_chunk))
                     
-                current_time = time.time()
-                
-                # Track when speech actually starts (first chunk sent)
-                if speech_start_time is None:
-                    speech_start_time = current_time
-                    barge_in_enabled_time = speech_start_time + grace_period
-                    print(f"🎵 Speech started, barge-in will be enabled at {grace_period}s")
-                
-                # Barge-in check
-                if (barge_in_enabled_time and current_time >= barge_in_enabled_time and 
-                    i % (CHUNK_SIZE * BARGE_IN_CHECK_FREQUENCY) == 0):
-                        
-                    try:
-                        # Quick barge-in check
-                        self.rtp_socket.settimeout(0.001)
-                        data, addr = self.rtp_socket.recvfrom(1024)
-                        if len(data) > 12:
-                            audio_payload = data[12:]
-                            linear_audio = self.mulaw_to_linear(audio_payload)
-                            audio_level = np.sqrt(np.mean(linear_audio**2))
-                            
-                            if audio_level > BARGE_IN_AUDIO_THRESHOLD:
-                                elapsed_time = current_time - speech_start_time
-                                print(f"🛑 BARGE-IN at {elapsed_time:.1f}s! Level: {audio_level:.3f}")
-                                self.barge_in_triggered = True
-                                self.clear_rtp_buffer()
-                                return True
-                                
-                    except socket.timeout:
-                        pass  # No packets to check
-                    except Exception:
-                        pass  # Continue on any error
-                
-                chunk = audio_bytes[i:i+CHUNK_SIZE]
-                if len(chunk) < CHUNK_SIZE:
-                    chunk = chunk + b'\x00' * (CHUNK_SIZE - len(chunk))
-                
-                # Create RTP packet
-                rtp_header = struct.pack('!BBHII', 
-                    0x80, 0x00, self.rtp_sequence, self.rtp_timestamp, self.rtp_ssrc)
-                packet = rtp_header + chunk
-                
-                try:
+                    rtp_header = struct.pack('!BBHII',
+                        0x80, 0x00, self.rtp_sequence, self.rtp_timestamp, self.rtp_ssrc
+                    )
+                    packet = rtp_header + sub_chunk
                     self.rtp_socket.sendto(packet, (HT801_IP, self.remote_rtp_port))
-                except Exception as e:
-                    print(f"❌ RTP send error: {e}")
-                    return False
-                
-                # Update RTP state
-                self.rtp_sequence = (self.rtp_sequence + 1) % 65536
-                self.rtp_timestamp = (self.rtp_timestamp + len(chunk)) % (2**32)
-                
-                # Configurable timing for speech delivery
-                time.sleep(AUDIO_CHUNK_DELAY)
-                
+                    self.rtp_sequence = (self.rtp_sequence + 1) % 65536
+                    self.rtp_timestamp = (self.rtp_timestamp + CHUNK_SIZE) % (2**32)
+                    
+                    # Barge-in check
+                    current_time = time.time()
+                    if speech_start_time is None:
+                        speech_start_time = current_time
+                        barge_in_enabled_time = speech_start_time + grace_period
+                    if current_time >= barge_in_enabled_time:
+                        try:
+                            self.rtp_socket.settimeout(0.001)
+                            data, addr = self.rtp_socket.recvfrom(1024)
+                            if len(data) > 12:
+                                audio_payload = data[12:]
+                                linear_audio = self.mulaw_to_linear(audio_payload)
+                                audio_level = np.sqrt(np.mean(linear_audio**2))
+                                if audio_level > BARGE_IN_AUDIO_THRESHOLD:
+                                    print(f"🛑 BARGE-IN! Audio: {audio_level:.4f}")
+                                    return True
+                        except socket.timeout:
+                            pass
+                        except Exception:
+                            pass
+                    
+                    time.sleep(AUDIO_CHUNK_DELAY)
+            
             return True
             
         except Exception as e:
             print(f"❌ Audio send error: {e}")
             return False
     
-    def receive_audio_data(self, max_duration=8.0, silence_timeout=1.5):
-        """Receive audio data with Voice Activity Detection"""
-        if not self.rtp_socket:
-            return None
-            
-        print(f"🎧 Listening with VAD (max {max_duration}s, {silence_timeout}s silence timeout)...")
-        
-        audio_chunks = []
-        self.rtp_socket.settimeout(0.1)
-        start_time = time.time()
-        last_speech_time = start_time
-        speech_detected = False
-        
-        try:
-            while time.time() - start_time < max_duration:
-                try:
-                    data, addr = self.rtp_socket.recvfrom(1024)
-                    current_time = time.time()
-                    
-                    # Skip RTP header (12 bytes) and get audio payload
-                    if len(data) > 12:
-                        audio_payload = data[12:]
-                        # Convert mu-law to linear PCM
-                        linear_audio = self.mulaw_to_linear(audio_payload)
-                        audio_chunks.append(linear_audio)
-                        
-                        # Simple voice activity detection
-                        audio_level = np.sqrt(np.mean(linear_audio**2))
-                        if audio_level > 0.015:  # Lowered speech threshold for better detection
-                            if not speech_detected:
-                                print("🎤 Speech detected, listening...")
-                                speech_detected = True
-                            last_speech_time = current_time
-                        
-                        # Stop if we've had silence for too long after detecting speech
-                        if speech_detected and (current_time - last_speech_time) > silence_timeout:
-                            print("🔇 Silence detected, stopping...")
-                            break
-                        
-                except socket.timeout:
-                    # Check for silence timeout
-                    if speech_detected and (time.time() - last_speech_time) > silence_timeout:
-                        print("🔇 Silence timeout, stopping...")
-                        break
-                    continue
-                    
-        except Exception as e:
-            print(f"❌ Audio receive error: {e}")
-        
-        if audio_chunks:
-            # Combine all chunks
-            audio_data = np.concatenate(audio_chunks)
-            print(f"🎵 Received {len(audio_chunks)} audio packets")
-            
-            # Quick audio validation
-            if len(audio_data) > 0:
-                audio_rms = np.sqrt(np.mean(audio_data**2))
-                print(f"🔊 Audio received: RMS={audio_rms:.3f}, {len(audio_data)} samples")
-            
-            return audio_data
-        else:
-            print("🔇 No audio received")
-            return None
-    
     def linear_to_mulaw(self, audio_data):
-        """Convert linear PCM to mu-law (G.711) - Fixed version with proper scaling"""
-        # Ensure audio is properly normalized and scaled
+        """Convert linear PCM to mu-law"""
         audio_data = np.clip(audio_data, -1.0, 1.0)
-        
-        # Convert to 14-bit PCM (mu-law uses 14-bit internally, not 16-bit)
-        audio_14bit = (audio_data * 8159).astype(np.int16)  # 8159 = 2^13 - 1
-        
-        # Use numpy for vectorized mu-law encoding (much faster and more accurate)
+        audio_14bit = (audio_data * 8159).astype(np.int16)
         mulaw_bytes = []
-        
         for sample in audio_14bit:
-            # Get sign and magnitude
             sign = 0x80 if sample < 0 else 0x00
-            magnitude = abs(sample)
-            
-            # Add bias (33 for mu-law)
-            magnitude += 33
-            
-            # Find the segment using bit operations (more efficient)
-            if magnitude >= 16415:  # Clipping
+            magnitude = abs(sample) + 33
+            if magnitude >= 16415:
                 segment = 7
                 quantized = 0x0F
             else:
-                # Find highest bit position
                 segment = 7
-                for i in range(7, -1, -1):
-                    if magnitude >= (33 << i):
-                        segment = i
+                for j in range(7, -1, -1):
+                    if magnitude >= (33 << j):
+                        segment = j
                         break
-                
-                # Get quantization within segment
-                if segment == 0:
-                    quantized = (magnitude - 33) >> 1
-                else:
-                    quantized = ((magnitude - (33 << segment)) >> (segment - 1)) & 0x0F
-            
-            # Combine components
+                quantized = (magnitude - 33) >> 1 if segment == 0 else ((magnitude - (33 << segment)) >> (segment - 1)) & 0x0F
             mulaw_value = sign | (segment << 4) | quantized
-            
-            # Apply complement (standard mu-law)
             mulaw_bytes.append(mulaw_value ^ 0xFF)
-        
         return bytes(mulaw_bytes)
     
     def mulaw_to_linear(self, mulaw_bytes):
-        """Convert mu-law to linear PCM - Fixed version matching encoder"""
+        """Convert mu-law to linear PCM"""
         linear_samples = []
-        
         for mulaw_byte in mulaw_bytes:
-            # Invert bits (reverse the complement)
             mulaw_value = mulaw_byte ^ 0xFF
-            
-            # Extract components
             sign = mulaw_value & 0x80
             segment = (mulaw_value >> 4) & 0x07
             quantized = mulaw_value & 0x0F
-            
-            # Reconstruct magnitude
-            if segment == 0:
-                magnitude = (quantized << 1) + 33
-            else:
-                magnitude = ((quantized << (segment - 1)) + (33 << segment))
-            
-            # Remove bias
+            magnitude = (quantized << 1) + 33 if segment == 0 else ((quantized << (segment - 1)) + (33 << segment))
             magnitude -= 33
-            
-            # Apply sign
-            if sign:
-                sample = -magnitude
-            else:
-                sample = magnitude
-            
-            # Normalize to [-1, 1] range using 14-bit scale
-            linear_samples.append(sample / 8159.0)  # Match the 14-bit encoding scale
-        
+            sample = -magnitude if sign else magnitude
+            linear_samples.append(sample / 8159.0)
         return np.array(linear_samples, dtype=np.float32)
     
     def monitor_sip_messages(self):
-        """Monitor SIP socket for BYE messages (hang-up detection)"""
+        """Monitor for SIP BYE messages (hang-up detection)"""
         print("📡 Monitoring for hang-up (SIP BYE messages)...")
-        
-        # Create a separate socket for monitoring with non-blocking mode
         monitor_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         monitor_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        monitor_socket.settimeout(0.5)  # Short timeout for responsive checking
-        
+        monitor_socket.settimeout(0.5)
         try:
             monitor_socket.bind((self.local_ip, 5060))
         except:
-            # If port is busy, use the main socket with timeout
             monitor_socket = self.socket
             monitor_socket.settimeout(0.5)
-        
         while self.call_active:
             try:
                 data, addr = monitor_socket.recvfrom(4096)
                 message = data.decode()
-                
-                # Check for BYE message (hang-up)
                 if message.startswith('BYE'):
                     print("📞 Hang-up detected (SIP BYE received)!")
                     self.call_active = False
-                    
-                    # Send 200 OK response to BYE
                     lines = message.split('\n')
                     via_line = next((line for line in lines if line.startswith('Via:')), '')
                     to_line = next((line for line in lines if line.startswith('To:')), '')
                     from_line = next((line for line in lines if line.startswith('From:')), '')
                     callid_line = next((line for line in lines if line.startswith('Call-ID:')), '')
                     cseq_line = next((line for line in lines if line.startswith('CSeq:')), '')
-                    
                     bye_response = f"""SIP/2.0 200 OK
 {via_line}
 {to_line}
@@ -626,23 +492,19 @@ Content-Length: 0
 """
                     monitor_socket.sendto(bye_response.encode(), addr)
                     break
-                    
             except socket.timeout:
                 continue
-            except Exception as e:
-                # Ignore errors, keep monitoring
+            except Exception:
                 continue
-                
         print("📡 SIP monitoring stopped")
     
     def hang_up(self):
-        """End the call"""
+        """Hang up the call"""
         try:
             if self.socket and self.call_active:
                 to_header = f"<sip:1000@{self.server_ip}>"
                 if self.to_tag:
                     to_header += f";tag={self.to_tag}"
-                
                 bye = f"""BYE sip:1000@{self.server_ip} SIP/2.0
 Via: SIP/2.0/UDP {self.local_ip}:5060;branch=z9hG4bK{random.randint(1000, 9999)}
 From: <sip:hotline@{self.local_ip}>;tag={self.from_tag}
@@ -653,9 +515,7 @@ Max-Forwards: 70
 Content-Length: 0
 
 """
-                
                 self.socket.sendto(bye.encode(), (self.server_ip, self.server_port))
-                
         except Exception as e:
             print(f"❌ Hangup error: {e}")
         finally:
@@ -665,214 +525,142 @@ Content-Length: 0
             if self.rtp_socket:
                 self.rtp_socket.close()
 
+    def receive_audio_data(self, max_duration=8.0, silence_timeout=1.5):
+        if not self.rtp_socket:
+            return None
+        print(f"🎧 Listening with VAD (max {max_duration}s, {silence_timeout}s silence timeout)...")
+        audio_chunks = []
+        self.rtp_socket.settimeout(0.1)
+        start_time = time.time()
+        last_speech_time = start_time
+        speech_detected = False
+        try:
+            while time.time() - start_time < max_duration:
+                try:
+                    data, addr = self.rtp_socket.recvfrom(1024)
+                    current_time = time.time()
+                    if len(data) > 12:
+                        audio_payload = data[12:]
+                        linear_audio = self.mulaw_to_linear(audio_payload)
+                        audio_chunks.append(linear_audio)
+                        audio_level = np.sqrt(np.mean(linear_audio**2))
+                        if audio_level > 0.015:
+                            if not speech_detected:
+                                print("🎤 Speech detected, listening...")
+                                speech_detected = True
+                            last_speech_time = current_time
+                        if speech_detected and (current_time - last_speech_time) > silence_timeout:
+                            print("🔇 Silence detected, stopping...")
+                            break
+                except socket.timeout:
+                    if speech_detected and (time.time() - last_speech_time) > silence_timeout:
+                        print("🔇 Silence timeout, stopping...")
+                        break
+                    continue
+        except Exception as e:
+            print(f"❌ Audio receive error: {e}")
+        if audio_chunks:
+            audio_data = np.concatenate(audio_chunks)
+            print(f"🎵 Received {len(audio_chunks)} audio packets")
+            if len(audio_data) > 0:
+                audio_rms = np.sqrt(np.mean(audio_data**2))
+                print(f"🔊 Audio received: RMS={audio_rms:.3f}, {len(audio_data)} samples")
+            return audio_data
+        print("🔇 No audio received")
+        return None
+
 class TimeravelHotlineSIP:
     def __init__(self, character="einstein"):
         self.character = character
         self.character_config = CHARACTERS.get(character, CHARACTERS["einstein"])
-        self.sip_call = None
-        
-        # Conversation memory
         self.conversation_history = []
-        
-        # Natural check-in system
         self.last_user_interaction = time.time()
         self.check_in_count = 0
-        
-        # DTMF detection for number selection
-        self.awaiting_dtmf = True
-        self.dtmf_buffer = ""
-        
-        # Initialize AI services
+        self.awaiting_dtmf = True  # Start by awaiting dial sequence
         self.setup_ai_services()
+        self.sip_call = None
     
     def setup_ai_services(self):
-        """Setup AI service connections with TTS provider support"""
-        # Setup TTS providers
         self.tts_providers = {}
-        
-        # ElevenLabs setup
-        eleven_api_key = os.getenv("ELEVEN_API_KEY")
-        if eleven_api_key:
-            self.tts_providers["elevenlabs"] = ElevenLabs(api_key=eleven_api_key)
-            print("✅ ElevenLabs initialized")
-        else:
-            print("⚠️ ELEVEN_API_KEY not found - ElevenLabs disabled")
-        
-        # Cartesia setup
-        cartesia_api_key = os.getenv("CARTESIA_API_KEY")
-        if cartesia_api_key:
-            self.tts_providers["cartesia"] = cartesia.Cartesia(api_key=cartesia_api_key)
-            print("✅ Cartesia initialized")
-        else:
-            print("⚠️ CARTESIA_API_KEY not found - Cartesia disabled")
-        
-        # Determine active TTS provider
+        if os.getenv("ELEVEN_API_KEY"):
+            self.tts_providers["elevenlabs"] = ElevenLabs(api_key=os.getenv("ELEVEN_API_KEY"))
+        if os.getenv("CARTESIA_API_KEY"):
+            self.tts_providers["cartesia"] = cartesia.Cartesia(api_key=os.getenv("CARTESIA_API_KEY"))
         self.active_tts_provider = TTS_PROVIDER
-        if self.active_tts_provider not in self.tts_providers:
-            # Fallback to first available provider
-            if self.tts_providers:
-                self.active_tts_provider = list(self.tts_providers.keys())[0]
-                print(f"🔄 Fallback to {self.active_tts_provider} TTS provider")
-            else:
-                print("❌ No TTS providers available")
-                sys.exit(1)
-        
-        print(f"🎤 Using {self.active_tts_provider} for TTS")
-        
-        # OpenAI
         openai.api_key = os.getenv("OPENAI_API_KEY")
         if not openai.api_key:
             print("❌ OPENAI_API_KEY not found")
             sys.exit(1)
-        
-        # Deepgram
         self.deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
         if not self.deepgram_api_key:
             print("❌ DEEPGRAM_API_KEY not found")
             sys.exit(1)
-        
         self.deepgram = Deepgram(self.deepgram_api_key)
     
-    def text_to_speech(self, text):
-        """Convert text to speech using configured TTS provider"""
-        try:
-            print(f"🗣️ {self.character_config['name']}: {text}")
-            
-            # Determine which provider to use for this character
-            character_provider = self.character_config.get('provider', self.active_tts_provider)
-            
-            if character_provider == "cartesia":
-                return self._cartesia_tts(text)
-            elif character_provider == "elevenlabs":
-                return self._elevenlabs_tts(text)
-            else:
-                print(f"❌ Unknown TTS provider: {character_provider}")
-                return None
-                
-        except Exception as e:
-            print(f"❌ TTS error: {e}")
-            return None
-    
-    def _cartesia_tts(self, text):
-        """Generate speech using Cartesia API with detailed timing"""
-        try:
-            start_time = time.time()
-            client = self.tts_providers["cartesia"]
-            
-            print("🚀 Cartesia TTS request...")
-            api_start = time.time()
-            
-            # Use bytes API (more reliable than SSE)
-            audio_data = client.tts.bytes(
-                model_id=CARTESIA_MODEL,
-                transcript=text,
-                voice={"mode": "id", "id": self.character_config['voice_id']},
-                output_format={
-                    "container": "raw",
-                    "encoding": "pcm_s16le",
-                    "sample_rate": SAMPLE_RATE,
-                },
-            )
-            
-            generation_start = time.time()
-            
-            # Handle generator response
-            if hasattr(audio_data, '__iter__'):
-                audio_bytes = b"".join(audio_data)
-            else:
-                audio_bytes = audio_data
-            
-            generation_end = time.time()
-            
-            if not audio_bytes:
-                print("❌ No audio data received from Cartesia")
-                return None
-            
-            # Convert to numpy array
-            audio_array = np.frombuffer(audio_bytes, dtype=np.int16)
-            
-            # Convert to float32 and normalize
-            audio_float = audio_array.astype(np.float32) / 32768.0
-            
-            end_time = time.time()
-            
-            # Detailed timing breakdown
-            api_time = generation_start - api_start
-            generation_time = generation_end - generation_start
-            processing_time = end_time - generation_end
-            total_time = end_time - start_time
-            
-            print(f"🎵 Cartesia audio: {SAMPLE_RATE}Hz, {len(audio_float)} samples")
-            print(f"⏱️ Detailed timing: API={api_time:.3f}s, Gen={generation_time:.3f}s, Process={processing_time:.3f}s, Total={total_time:.3f}s")
-            
-            return audio_float
-                
-        except Exception as e:
-            print(f"❌ Cartesia TTS error: {e}")
-            return None
-    
     def _elevenlabs_tts(self, text):
-        """Generate speech using ElevenLabs API"""
+        """Convert text to speech using ElevenLabs (full buffer)"""
         try:
             client = self.tts_providers["elevenlabs"]
-            
-            # Use the ElevenLabs client API
             audio_generator = client.text_to_speech.convert(
                 text=text,
                 voice_id=self.character_config['voice_id'],
                 model_id="eleven_monolingual_v1"
             )
-            
-            # Collect audio bytes from generator
             audio_bytes = b"".join(audio_generator)
-            
-            # Convert to numpy array for RTP transmission
             audio_segment = AudioSegment.from_mp3(io.BytesIO(audio_bytes))
-            
-            # Ensure proper sample rate conversion for telephone (8kHz) 
-            original_rate = audio_segment.frame_rate
-            print(f"🎵 ElevenLabs audio: {original_rate}Hz, converting to {SAMPLE_RATE}Hz")
-            
-            # Simple working conversion: ElevenLabs → 8kHz
             audio_segment = audio_segment.set_frame_rate(SAMPLE_RATE).set_channels(1)
-            
-            # Convert to float32 and normalize properly
-            audio_data = np.array(audio_segment.get_array_of_samples(), dtype=np.float32)
-            
-            # Normalize based on the bit depth of the original audio
-            if audio_segment.sample_width == 2:  # 16-bit
-                audio_data = audio_data / 32768.0
-            elif audio_segment.sample_width == 3:  # 24-bit  
-                audio_data = audio_data / 8388608.0
-            else:  # assume 16-bit
-                audio_data = audio_data / 32768.0
-                
+            audio_data = np.array(audio_segment.get_array_of_samples(), dtype=np.float32) / 32768.0
             return audio_data
-            
         except Exception as e:
             print(f"❌ ElevenLabs TTS error: {e}")
             return None
     
+    def _cartesia_tts(self, text):
+        """Stream Cartesia audio chunks"""
+        try:
+            client = self.tts_providers["cartesia"]
+            audio_generator = client.tts.sse(
+                model_id=CARTESIA_MODEL,
+                transcript=text,
+                voice={"mode": "id", "id": self.character_config['voice_id']},
+                output_format={"container": "raw", "encoding": "pcm_s16le", "sample_rate": SAMPLE_RATE},
+            )
+            for event in audio_generator:
+                if event.event == "audio":
+                    yield event.data  # raw 16-bit PCM bytes
+        except Exception as e:
+            print(f"❌ Cartesia TTS error: {e}")
+            yield None
+    
+    def text_to_speech(self, text):
+        """Convert text to speech and return a generator of audio chunks"""
+        print(f"🗣️ {self.character_config['name']}: {text}")
+        character_provider = self.character_config.get('provider', self.active_tts_provider)
+        if character_provider == "cartesia":
+            return self._cartesia_tts(text)  # Yields chunks progressively
+        elif character_provider == "elevenlabs":
+            audio_data = self._elevenlabs_tts(text)
+            if audio_data is not None:
+                # Yield full audio as single chunk for ElevenLabs (non-streaming)
+                yield audio_data.tobytes()  # As raw float32 bytes; adjust if needed
+            else:
+                yield None
+        else:
+            yield None
+    
     def speech_to_text(self, audio_data):
         """Convert speech to text using Deepgram"""
         try:
-            # Convert to 16-bit integer format for Deepgram
             audio_16bit = (audio_data * 32767).astype(np.int16)
-            
-            # Create audio segment with correct parameters
             audio_segment = AudioSegment(
                 audio_16bit.tobytes(),
                 frame_rate=SAMPLE_RATE,
                 sample_width=2,  # 16-bit
                 channels=1
             )
-            
-            # Convert to wav bytes
             wav_io = io.BytesIO()
             audio_segment.export(wav_io, format="wav")
             wav_bytes = wav_io.getvalue()
-            
-            # Send to Deepgram
             response = self.deepgram.transcription.sync_prerecorded(
                 {'buffer': wav_bytes, 'mimetype': 'audio/wav'},
                 {
@@ -882,7 +670,6 @@ class TimeravelHotlineSIP:
                     'smart_format': True,
                 }
             )
-            
             transcript = response['results']['channels'][0]['alternatives'][0]['transcript']
             if transcript.strip():
                 print(f"🎤 You said: '{transcript.strip()}'")
@@ -890,7 +677,6 @@ class TimeravelHotlineSIP:
             else:
                 print("🎤 No speech detected")
                 return None
-            
         except Exception as e:
             print(f"❌ STT error: {e}")
             import traceback
@@ -1068,9 +854,8 @@ class TimeravelHotlineSIP:
             if self.awaiting_dtmf:
                 dial_tone_prompt = "Time Travel Hotline! Please dial your destination: Press 151 to speak with yourself, or just start talking for Einstein."
                 print(f"🎵 {dial_tone_prompt}")
-                prompt_audio = self.text_to_speech(dial_tone_prompt)
-                if prompt_audio is not None:
-                    self.sip_call.send_audio_data(prompt_audio, is_greeting=True)
+                prompt_audio_gen = self.text_to_speech(dial_tone_prompt)
+                self.sip_call.send_audio_data(prompt_audio_gen, is_greeting=True)
                 
                 # Listen for DTMF or speech for 10 seconds
                 print("🎧 Listening for dial tones or speech...")
@@ -1100,9 +885,8 @@ class TimeravelHotlineSIP:
             print("🧹 Pickup audio clearing complete")
             
             # Send character greeting
-            greeting_audio = self.text_to_speech(self.character_config['greeting'])
-            if greeting_audio is not None:
-                self.sip_call.send_audio_data(greeting_audio, is_greeting=True)
+            greeting_audio_gen = self.text_to_speech(self.character_config['greeting'])
+            self.sip_call.send_audio_data(greeting_audio_gen, is_greeting=True)
             
             # Conversation loop
             while self.sip_call.call_active:
@@ -1132,9 +916,8 @@ class TimeravelHotlineSIP:
                             # Check for goodbye
                             if any(word in user_text.lower() for word in ["goodbye", "bye", "end call", "hang up"]):
                                 farewell = "Farewell, my friend! Until we meet again across the streams of time!"
-                                farewell_audio = self.text_to_speech(farewell)
-                                if farewell_audio is not None:
-                                    self.sip_call.send_audio_data(farewell_audio)
+                                farewell_audio_gen = self.text_to_speech(farewell)
+                                self.sip_call.send_audio_data(farewell_audio_gen)
                                 break
                             
                             # Get AI response
@@ -1142,13 +925,12 @@ class TimeravelHotlineSIP:
                             ai_response = self.get_ai_response(user_text)
                             ai_end = time.time()
                             
-                            # Convert to speech and send
+                            # Convert to speech and send via streaming
                             tts_start = time.time()
-                            response_audio = self.text_to_speech(ai_response)
-                            if response_audio is not None:
-                                tts_end = time.time()
-                                print(f"⏱️ AI response: {ai_end - ai_start:.3f}s + TTS: {tts_end - tts_start:.3f}s = Total: {tts_end - transcription_start:.3f}s")
-                                self.sip_call.send_audio_data(response_audio)
+                            audio_generator = self.text_to_speech(ai_response)
+                            tts_end = time.time()  # This is just setup time; streaming happens in send
+                            print(f"⏱️ AI response: {ai_end - ai_start:.3f}s + TTS setup: {tts_end - tts_start:.3f}s")
+                            self.sip_call.send_audio_data(audio_generator)
                             
                         else:
                             # No speech detected - check if we should naturally check in
@@ -1157,9 +939,8 @@ class TimeravelHotlineSIP:
                                 print(f"🤔 Natural check-in #{self.check_in_count + 1}")
                                 print(f"🗣️ {self.character_config['name']}: {check_in_message}")
                                 
-                                check_in_audio = self.text_to_speech(check_in_message)
-                                if check_in_audio is not None:
-                                    self.sip_call.send_audio_data(check_in_audio)
+                                check_in_audio_gen = self.text_to_speech(check_in_message)
+                                self.sip_call.send_audio_data(check_in_audio_gen)
                                 
                                 self.check_in_count += 1
                             else:
